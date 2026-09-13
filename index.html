@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="top">
+      <span class="eyebrow">차샘 운전교실</span>
+      <h1>수강생 실력 체크리스트</h1>
+      <p class="sub">수강생을 등록하고, 수업이 끝날 때마다 회차별 점수를 입력하세요. 회차 기록이 쌓이면 최근/이전 점수와 향상도가 자동으로 계산됩니다.</p>
+    </header>
+
+    <details class="usage-guide">
+      <summary>사용방법 보기</summary>
+      <ol>
+        <li><b>'수강생 관리'</b> 탭에 수강생 기본정보를 입력합니다.</li>
+        <li><b>'회차별 평가'</b> 탭에서 수업할 때마다 수강생을 고르고 회차를 입력합니다.</li>
+        <li>기본조작부터 위험대처까지 0~100점으로 평가합니다.</li>
+        <li>종합점수는 10개 평가항목의 평균으로 자동 계산됩니다.</li>
+        <li>이전점수와 향상도는 같은 수강생의 이전 회차 기록을 기준으로 자동 표시됩니다.</li>
+        <li>점수 기준: <b>0~59 집중 연습 / 60~74 연습 필요 / 75~89 가능 / 90~100 능숙</b></li>
+        <li>점수 셀은 위 색상으로 실력 수준을 쉽게 확인할 수 있습니다 (스프레드시트에서도 동일하게 표시됩니다).</li>
+        <li>수강생별 기록을 계속 추가하면 회차별 실력 변화를 누적 관리할 수 있습니다.</li>
+      </ol>
+    </details>
+
+    <nav class="tabs">
+      <button type="button" class="tab-btn is-active" data-tab="roster">수강생 관리</button>
+      <button type="button" class="tab-btn" data-tab="sessions">회차별 평가</button>
+      <button type="button" class="tab-btn" data-tab="chart">개인별 그래프</button>
+    </nav>
+
+    <!-- ================= 탭 1: 수강생 관리 ================= -->
+    <section id="tabRoster" class="tab-panel">
+      <div class="panel-card">
+        <div class="add-student">
+          <label>새 수강생 등록</label>
+          <div class="add-student-row">
+            <input type="text" id="newStudentName" placeholder="수강생명">
+            <input type="text" id="newStudentContact" placeholder="연락처 (선택)">
+            <input type="date" id="newStudentDate">
+            <button type="button" id="addStudentBtn">등록</button>
+          </div>
+        </div>
+
+        <div class="roster-search">
+          <input type="text" id="rosterSearch" placeholder="수강생명으로 검색">
+          <span class="roster-count" id="rosterCount"></span>
+        </div>
+
+        <div class="table-scroll">
+          <table class="roster-table">
+            <thead>
+              <tr>
+                <th>수강생명</th><th>연락처</th><th>등록일</th><th>총 수업횟수</th>
+                <th>최근 점수</th><th>이전 점수</th><th>향상도</th><th>현재 레벨</th>
+                <th>강사 메모</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="rosterBody">
+              <tr><td colspan="10" class="empty-row">불러오는 중…</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pagination" id="rosterPagination"></div>
+      </div>
+    </section>
+
+    <!-- ================= 탭 2: 회차별 평가 ================= -->
+    <section id="tabSessions" class="tab-panel" hidden>
+
+      <div class="report-card">
+        <div class="report-top">
+          <div class="field">
+            <label for="studentSelect">수강생 선택</label>
+            <input type="text" id="studentSearch" class="student-search" placeholder="이름검색">
+            <select id="studentSelect"></select>
+          </div>
+          <div class="field">
+            <label>최근 종합점수</label>
+            <div class="field-value" id="reportAvg">-</div>
+          </div>
+          <div class="field">
+            <label>이전 점수</label>
+            <div class="field-value" id="reportPrev">-</div>
+          </div>
+          <div class="field">
+            <label>향상도</label>
+            <div class="field-value" id="reportDelta">-</div>
+          </div>
+        </div>
+
+        <div class="field-inline">
+          <span>현재 레벨 · <b id="reportLevel">-</b></span>
+          <span>총 수업횟수 · <b id="reportSessionCount">0</b>회</span>
+        </div>
+
+        <div class="table-scroll">
+          <table class="report-table">
+            <thead><tr><th>평가 항목</th><th>최근 점수</th><th>평가</th></tr></thead>
+            <tbody id="reportTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="report-focus">
+          <div class="report-focus-head">🎯 집중 보완 영역</div>
+          <div id="focusBody">불러오는 중…</div>
+          <div class="focus-memo">
+            <label for="focusMemo">강사 메모</label>
+            <textarea id="focusMemo" placeholder="이 수강생이 집중해야 할 부분을 메모해보세요..."></textarea>
+            <span class="focus-memo-status" id="focusMemoStatus">&nbsp;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group" id="sessionFormGroup">
+        <div class="group-head session-head">
+          <div class="group-title"><span id="sessionFormLabel">새 회차 입력</span><span class="session-no-line"><span id="nextSessionNo">1</span>회차</span></div>
+          <input type="date" id="sessionDate" class="date-input">
+        </div>
+
+        <div class="subgroup-title"><span>1단계</span>기능시험 항목</div>
+        <div id="courseRows"></div>
+
+        <div class="subgroup-title"><span>2단계</span>도로주행 항목</div>
+        <div id="roadRows"></div>
+
+        <div class="edit-banner" id="editBanner" hidden>
+          <span id="editBannerText"></span>
+          <button type="button" id="cancelEditBtn">취소</button>
+        </div>
+
+        <div class="session-actions">
+          <div class="session-preview">이번 회차 종합점수 미리보기 · <b id="previewTotal">0</b>점</div>
+          <button type="button" id="saveSessionBtn">이번 회차 저장</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">
+          <div class="group-title">수업 이력</div>
+          <button type="button" class="reset" id="deleteLastBtn">마지막 회차 삭제</button>
+        </div>
+        <div class="table-scroll">
+          <table class="history-table">
+            <thead id="historyHead"></thead>
+            <tbody id="historyBody">
+              <tr><td class="empty-row">아직 기록이 없어요.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="historyPagination"></div>
+      </div>
+    </section>
+
+    <!-- ================= 탭 3: 그래프 ================= -->
+    <section id="tabChart" class="tab-panel" hidden>
+      <div class="group">
+        <div class="group-head">
+          <div class="group-title">종합 그래프<span class="session-no-line" id="chartPeriodLabel"></span></div>
+        </div>
+
+        <div class="chart-student-picker">
+          <input type="text" id="chartStudentSearch" class="student-search" placeholder="이름">
+          <select id="chartStudentSelect"></select>
+          <select id="chartMetricSelect">
+            <option value="total">종합점수</option>
+          </select>
+        </div>
+
+        <div class="chart-granularity" id="chartGranularity">
+          <button type="button" class="gran-btn is-active" data-gran="day">일</button>
+          <button type="button" class="gran-btn" data-gran="week">주</button>
+          <button type="button" class="gran-btn" data-gran="month">월</button>
+        </div>
+
+        <div id="sessionChartWrap" class="chart-wrap">불러오는 중…</div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">
+          <div class="group-title">기능별 최근 점수<span class="session-no-line" id="itemBarPeriodLabel"></span></div>
+        </div>
+        <div class="subgroup-title"><span>1단계</span>기능시험 항목</div>
+        <div id="itemBarCourse" class="item-bar-list"></div>
+        <div class="subgroup-title"><span>2단계</span>도로주행 항목</div>
+        <div id="itemBarRoad" class="item-bar-list"></div>
+      </div>
+    </section>
+
+    <footer>
+      <span class="note" id="statusNote">불러오는 중…</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+
+</body>
+</html>
