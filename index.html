@@ -48,6 +48,7 @@
             <input type="text" id="newStudentName" placeholder="수강생명">
             <input type="text" id="newStudentContact" placeholder="연락처 (선택)">
             <input type="date" id="newStudentDate">
+            <input type="date" id="newStudentEndDate" title="마감일 (선택)">
             <button type="button" id="addStudentBtn">등록</button>
           </div>
         </div>
@@ -61,13 +62,13 @@
           <table class="roster-table">
             <thead>
               <tr>
-                <th>수강생명</th><th>연락처</th><th>등록일</th><th>총 수업횟수</th>
+                <th>수강생명</th><th>연락처</th><th>등록일</th><th>마감일</th><th>총 수업횟수</th>
                 <th>최근 점수</th><th>이전 점수</th><th>향상도</th><th>현재 레벨</th>
                 <th>강사 메모</th><th></th><th></th>
               </tr>
             </thead>
             <tbody id="rosterBody">
-              <tr><td colspan="11" class="empty-row">불러오는 중…</td></tr>
+              <tr><td colspan="12" class="empty-row">불러오는 중…</td></tr>
             </tbody>
           </table>
         </div>
