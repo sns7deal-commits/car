@@ -73,6 +73,7 @@
   var newStudentName = document.getElementById("newStudentName");
   var newStudentContact = document.getElementById("newStudentContact");
   var newStudentDate = document.getElementById("newStudentDate");
+  var newStudentEndDate = document.getElementById("newStudentEndDate");
   var addStudentBtn = document.getElementById("addStudentBtn");
 
   var studentSelect = document.getElementById("studentSelect");
@@ -221,11 +222,11 @@
   function renderRoster(rows, filteredTotal, term) {
     rosterBody.innerHTML = "";
     if (!rosterAllRows.length) {
-      rosterBody.innerHTML = '<tr><td colspan="11" class="empty-row">등록된 수강생이 없어요. 위에서 추가해 보세요.</td></tr>';
+      rosterBody.innerHTML = '<tr><td colspan="12" class="empty-row">등록된 수강생이 없어요. 위에서 추가해 보세요.</td></tr>';
       return;
     }
     if (term && filteredTotal === 0) {
-      rosterBody.innerHTML = '<tr><td colspan="11" class="empty-row">"' + term + '" 검색 결과가 없어요.</td></tr>';
+      rosterBody.innerHTML = '<tr><td colspan="12" class="empty-row">"' + term + '" 검색 결과가 없어요.</td></tr>';
       return;
     }
     rows.forEach(function (r) {
@@ -235,6 +236,7 @@
 
       tr.appendChild(makeEditableCell(r.id, "contact", r.contact, "text", "연락처"));
       tr.appendChild(makeEditableCell(r.id, "registeredDate", r.registeredDate, "date"));
+      tr.appendChild(makeEditableCell(r.id, "endDate", r.endDate, "date"));
 
       var tdCount = document.createElement("td");
       tdCount.textContent = r.sessionCount + "회";
@@ -346,12 +348,13 @@
     if (!name) { newStudentName.focus(); return; }
     addStudentBtn.disabled = true;
     setStatus("수강생 등록 중…");
-    callApi("addStudent", { name: name, contact: newStudentContact.value.trim(), registeredDate: newStudentDate.value })
+    callApi("addStudent", { name: name, contact: newStudentContact.value.trim(), registeredDate: newStudentDate.value, endDate: newStudentEndDate.value })
       .then(function (newStudent) {
         addStudentBtn.disabled = false;
         newStudentName.value = "";
         newStudentContact.value = "";
         newStudentDate.value = todayStr();
+        newStudentEndDate.value = "";
         setStatus("등록됨 · " + nowLabel());
 
         // 등록한 수강생이 검색/페이지에 가려 안 보이는 일이 없도록 명단 보기를 초기화한다.
