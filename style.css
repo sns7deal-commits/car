@@ -1,533 +1,877 @@
-/**
- * 운전 실력 진단 - Apps Script 백엔드
- * 이 파일은 Google Sheet에 바인딩된 Apps Script 프로젝트에 붙여넣습니다.
- * (스프레드시트를 열고 확장 프로그램 > Apps Script)
- *
- * 데이터 모델
- *  - Students: 수강생 명부 (이름/연락처/등록일/강사메모) - 회차 정보는 없음
- *  - Sessions: 회차별 평가 이력 - 수업마다 한 행씩 쌓이는 기록(수정 없이 추가만 됨)
- *              총 수업횟수·최근 점수·이전 점수·향상도는 전부 Sessions에서 계산해서 보여준다.
- */
-
-var SHEET_STUDENTS = 'Students';
-var SHEET_SESSIONS = 'Sessions';
-
-var SPREADSHEET_ID = '1D_bBxOLIoEL-KbARvufekeDA5Fodt28TIZPA3E_Bw7c';
-
-function getSpreadsheet_() {
-  return SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
-}
-
-// 평가 항목 메타데이터 - 이 배열이 유일한 기준(Single Source of Truth)입니다.
-// 항목을 추가/변경하려면 여기만 고치면 서버·클라이언트·시트 헤더에 모두 반영됩니다.
-var ITEMS = [
-  { id: 'basic',      label: '기본조작',    group: 'course' },
-  { id: 'startstop',  label: '출발·정지',   group: 'course' },
-  { id: 'corner',     label: '코너링',      group: 'course' },
-  { id: 'tpark',      label: 'T자 주차',    group: 'course' },
-  { id: 'reverse',    label: '후진',        group: 'course' },
-  { id: 'parking',    label: '주차',        group: 'course' },
-  { id: 'lanechange', label: '차선변경',    group: 'road' },
-  { id: 'signal',     label: '신호·교차로', group: 'road' },
-  { id: 'roaddrive',  label: '도로주행',    group: 'road' },
-  { id: 'hazard',     label: '위험대처',    group: 'road' }
-];
-
-var STUDENTS_HEADERS = ['StudentId', 'Name', 'Contact', 'RegisteredDate', 'Memo'];
-
-// 눈으로 볼 열(수업일~이전점수)을 앞에, 조회용 기술 열(StudentId 등)은 뒤에 둔다 -
-// 시트를 직접 열어도 "수업일/수강생명/회차/.../종합점수/이전점수" 순서로 바로 읽힌다.
-var SESSIONS_HEADERS = ['Date', 'StudentName', 'SessionNo']
-  .concat(ITEMS.map(function (item) { return item.id; }))
-  .concat(['TotalScore', 'PrevScore', 'StudentId', 'SessionId', 'CreatedAt']);
-
-// 데모로 시딩할 첫 수강생의 1회차 점수 (필요 없으면 setup()에서 이 부분만 지워도 됩니다)
-var DEMO_SCORES = {
-  basic: 100, startstop: 50, corner: 50, tpark: 10,
-  reverse: 0, parking: 0, lanechange: 0, signal: 0, roaddrive: 0, hazard: 0
-};
-
-/* ---------------------------------------------------------------------- */
-/* 웹앱 진입점                                                              */
-/* ---------------------------------------------------------------------- */
-
-function doGet() {
-  ensureSetup_();
-  return HtmlService.createTemplateFromFile('index')
-    .evaluate()
-    .setTitle('차샘 운전교실 - 수강생 실력 체크리스트')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-// index.html 안에서 <?!= include('Stylesheet'); ?> 형태로 다른 HTML 파일을 끼워 넣을 때 사용
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
-}
-
-/* ---------------------------------------------------------------------- */
-/* 외부(GitHub Pages 등) 화면용 JSON API                                    */
-/* ---------------------------------------------------------------------- */
-
-// 이 웹앱 URL이 아닌 다른 곳(GitHub Pages 등)에 화면을 따로 두었을 때,
-// 그 화면의 자바스크립트가 fetch(...)로 이 주소에 POST 요청을 보내 데이터를
-// 읽고 쓸 수 있게 해주는 창구. google.script.run을 쓸 수 없는 외부 화면 전용이며,
-// 기존 doGet() 화면(google.script.run 방식)은 그대로 영향받지 않는다.
-function doPost(e) {
-  var response;
-  try {
-    var req = JSON.parse(e.postData.contents);
-    var action = req.action;
-    var data = req.data || {};
-    var result;
-    switch (action) {
-      case 'getStudents':        result = getStudents(); break;
-      case 'getStudentRoster':   result = getStudentRoster(); break;
-      case 'getStudentSummary':  result = getStudentSummary(data.studentId); break;
-      case 'getSessions':        result = getSessions(data.studentId); break;
-      case 'addStudent':         result = addStudent(data); break;
-      case 'updateStudentInfo':  result = updateStudentInfo(data.studentId, data.patch); break;
-      case 'deleteStudent':      result = deleteStudent(data.studentId); break;
-      case 'addSession':         result = addSession(data.studentId, data.date, data.itemScores); break;
-      case 'updateSession':      result = updateSession(data.sessionId, data.studentId, data.date, data.itemScores); break;
-      case 'deleteLastSession':  result = deleteLastSession(data.studentId); break;
-      default: throw new Error('알 수 없는 요청입니다: ' + action);
+:root{
+    color-scheme: light;
+    --page:      #f5f7fb;
+    --surface:   #ffffff;
+    --surface-2: #eef2f8;
+    --ink:       #141a24;
+    --ink-2:     #4c5768;
+    --ink-muted: #8b95a5;
+    --line:      #e2e7ee;
+    --line-strong: #c7d0dd;
+    --accent:    #2a78d6;
+    --accent-soft: #dce8fa;
+    --good:      #0ca30c;
+    --good-soft: #e2f5e2;
+    --tier-ok:      #0f7a6c;
+    --tier-ok-soft: #dcf5f0;
+    --warn:      #9a6400;
+    --warn-soft: #fbecd2;
+    --bad:       #c0392b;
+    --bad-soft:  #fbe4e1;
+    --shadow: 0 1px 2px rgba(20,26,36,0.04), 0 8px 24px -12px rgba(20,26,36,0.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --page:      #0c0f16;
+      --surface:   #161b26;
+      --surface-2: #1d2434;
+      --ink:       #f2f5fa;
+      --ink-2:     #c3ccdc;
+      --ink-muted: #8a93a6;
+      --line:      #2a3244;
+      --line-strong: #3a4459;
+      --accent:    #5b9bef;
+      --accent-soft: #223350;
+      --good:      #4ecb4e;
+      --good-soft: #163420;
+      --tier-ok:      #5fd9c5;
+      --tier-ok-soft: #123a34;
+      --warn:      #ffcf70;
+      --warn-soft: #3a2c0a;
+      --bad:       #ff8a75;
+      --bad-soft:  #3a1613;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 28px -14px rgba(0,0,0,0.6);
     }
-    response = { ok: true, result: result };
-  } catch (err) {
-    response = { ok: false, error: (err && err.message) ? err.message : String(err) };
   }
-  return ContentService.createTextOutput(JSON.stringify(response))
-    .setMimeType(ContentService.MimeType.JSON);
-}
-
-/* ---------------------------------------------------------------------- */
-/* 시트 준비 / 시드 데이터                                                   */
-/* ---------------------------------------------------------------------- */
-
-function getSheet_(name, headers) {
-  var ss = getSpreadsheet_();
-  var sheet = ss.getSheetByName(name);
-  if (!sheet) {
-    sheet = ss.insertSheet(name);
-    sheet.appendRow(headers);
-    sheet.setFrozenRows(1);
-  }
-  return sheet;
-}
-
-// 스프레드시트를 열고 Apps Script 편집기에서 이 함수를 한 번 실행하면
-// 필요한 시트(Students, Sessions)를 만들고 데모 수강생 1명 + 1회차를 채워줍니다.
-function setup() {
-  var studentsSheet = getSheet_(SHEET_STUDENTS, STUDENTS_HEADERS);
-  var sessionsSheet = getSheet_(SHEET_SESSIONS, SESSIONS_HEADERS);
-
-  if (studentsSheet.getLastRow() < 2) {
-    var id = Utilities.getUuid();
-    var today = todayKey_();
-    studentsSheet.appendRow([id, '이석재', '', today, '']);
-    appendSessionRow_(sessionsSheet, id, '이석재', today, 1, DEMO_SCORES, null);
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --page:      #0c0f16;
+    --surface:   #161b26;
+    --surface-2: #1d2434;
+    --ink:       #f2f5fa;
+    --ink-2:     #c3ccdc;
+    --ink-muted: #8a93a6;
+    --line:      #2a3244;
+    --line-strong: #3a4459;
+    --accent:    #5b9bef;
+    --accent-soft: #223350;
+    --good:      #4ecb4e;
+    --good-soft: #163420;
+    --tier-ok:      #5fd9c5;
+    --tier-ok-soft: #123a34;
+    --warn:      #ffcf70;
+    --warn-soft: #3a2c0a;
+    --bad:       #ff8a75;
+    --bad-soft:  #3a1613;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 12px 28px -14px rgba(0,0,0,0.6);
   }
 
-  applyScoreFormatting_(sessionsSheet);
-  return 'setup 완료';
-}
-
-// 점수 기준(0~59 집중 연습 / 60~74 연습 필요 / 75~89 가능 / 90~100 능숙)에 맞춰
-// Sessions 시트의 점수 열(항목 10개 + 종합점수)에 색을 입힌다.
-// 값이 채워지는 대로 자동 적용되도록 넉넉한 범위(2~2000행)에 미리 걸어둔다.
-function applyScoreFormatting_(sessionsSheet) {
-  var lastCol = sessionsSheet.getLastColumn();
-  var headerRow = sessionsSheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  var idx = headerIndex_(headerRow);
-  var scoreCols = ITEMS.map(function (item) { return idx[item.id] + 1; }).concat([idx.TotalScore + 1]);
-
-  var ranges = scoreCols.map(function (col) { return sessionsSheet.getRange(2, col, 1999, 1); });
-
-  var rules = [
-    { min: 90, max: 100, bg: '#dcfce7', text: '#047857' },  // 능숙
-    { min: 75, max: 89,  bg: '#e0f2f1', text: '#0f766e' },  // 가능
-    { min: 60, max: 74,  bg: '#fef3c7', text: '#92400e' },  // 연습 필요
-    { min: 0,  max: 59,  bg: '#fee2e2', text: '#b91c1c' }   // 집중 연습
-  ].map(function (band) {
-    return SpreadsheetApp.newConditionalFormatRule()
-      .whenNumberBetween(band.min, band.max)
-      .setBackground(band.bg)
-      .setFontColor(band.text)
-      .setRanges(ranges)
-      .build();
-  });
-
-  // 이 시트에 이미 걸려 있던 규칙은 지우고 새로 건다 (setup을 여러 번 실행해도 중복되지 않도록).
-  sessionsSheet.setConditionalFormatRules(rules);
-}
-
-function ensureSetup_() {
-  var ss = getSpreadsheet_();
-  if (!ss.getSheetByName(SHEET_STUDENTS) || !ss.getSheetByName(SHEET_SESSIONS)) {
-    setup();
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--page);
+    color:var(--ink);
+    font-family:"Noto Sans KR", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  ensureContactColumnIsText_(getSheet_(SHEET_STUDENTS, STUDENTS_HEADERS));
-}
-
-// 연락처 칸을 항상 "일반 텍스트" 서식으로 고정한다.
-// 그냥 두면 010으로 시작하는 번호를 숫자로 인식해 앞자리 0을 지워버리기 때문.
-function ensureContactColumnIsText_(studentsSheet) {
-  var col = STUDENTS_HEADERS.indexOf('Contact') + 1;
-  studentsSheet.getRange(2, col, 1999, 1).setNumberFormat('@');
-}
-
-/* ---------------------------------------------------------------------- */
-/* 조회 - 수강생 목록 / 명부 / 상세 요약 / 회차 이력                            */
-/* ---------------------------------------------------------------------- */
-
-function getStudents() {
-  ensureSetup_();
-  return readAllStudents_()
-    .map(function (s) { return { id: s.id, name: s.name }; })
-    .sort(function (a, b) { return a.name.localeCompare(b.name, 'ko'); });
-}
-
-// "수강생 관리" 화면용 - 학생별 요약 행 (총 수업횟수/최근점수/이전점수/향상도/레벨 포함)
-function getStudentRoster() {
-  ensureSetup_();
-  // 등록한 순서(시트에 쌓이는 순서)의 반대로 보여줘서 최근에 등록한 수강생이 맨 위로 오게 한다.
-  var students = readAllStudents_().reverse();
-  return students.map(function (s) {
-    var sessions = readSessions_(s.id);
-    var latest = sessions.length ? sessions[sessions.length - 1] : null;
-    var prev = sessions.length > 1 ? sessions[sessions.length - 2] : null;
-    var recentScore = latest ? latest.total : null;
-    var prevScore = prev ? prev.total : null;
-    var delta = (recentScore != null && prevScore != null) ? recentScore - prevScore : null;
-    var level = latest ? levelFromScore_(latest.total) : '-';
-    return {
-      id: s.id,
-      name: s.name,
-      contact: s.contact,
-      registeredDate: s.registeredDate,
-      memo: s.memo,
-      sessionCount: sessions.length,
-      recentScore: recentScore,
-      prevScore: prevScore,
-      delta: delta,
-      level: level
-    };
-  });
-}
-
-// "회차별 평가" 화면용 - 특정 학생의 최신 상태 요약 (막대그래프/집중 보완 영역 등에 사용)
-function getStudentSummary(studentId) {
-  ensureSetup_();
-  var student = findStudent_(studentId);
-  if (!student) throw new Error('수강생을 찾을 수 없습니다.');
-
-  var sessions = readSessions_(studentId);
-  var latest = sessions.length ? sessions[sessions.length - 1] : null;
-  var prev = sessions.length > 1 ? sessions[sessions.length - 2] : null;
-
-  var items = ITEMS.map(function (meta) {
-    return {
-      id: meta.id,
-      label: meta.label,
-      group: meta.group,
-      value: latest ? (latest.items[meta.id] || 0) : 0
-    };
-  });
-
-  var overall = latest ? latest.total : 0;
-  var prevScore = prev ? prev.total : null;
-  var level = latest ? levelFromScore_(latest.total) : '-';
-  var delta = (latest && prev) ? (latest.total - prev.total) : null;
-
-  var needsWork = latest
-    ? items.filter(function (it) { return it.value > 0 && it.value < 90; })
-        .sort(function (a, b) { return a.value - b.value; })
-        .slice(0, 3)
-    : [];
-
-  var weakest = items.reduce(function (best, it) { return it.value < best.value ? it : best; }, items[0]);
-
-  return {
-    student: student,
-    items: items,
-    overall: overall,
-    prevScore: prevScore,
-    level: level,
-    delta: delta,
-    needsWork: needsWork,
-    weakest: weakest,
-    hasSessions: !!latest,
-    sessionCount: sessions.length,
-    nextSessionNo: sessions.length + 1
-  };
-}
-
-// 회차별 평가 화면 하단의 "수업 이력" 표 - 최신 회차가 맨 위로 오도록 반환
-function getSessions(studentId) {
-  ensureSetup_();
-  return readSessions_(studentId).slice().reverse();
-}
-
-/* ---------------------------------------------------------------------- */
-/* 저장                                                                     */
-/* ---------------------------------------------------------------------- */
-
-function addStudent(data) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    ensureSetup_();
-    var name = ((data && data.name) || '').trim();
-    if (!name) throw new Error('이름을 입력해 주세요.');
-    var contact = (data && data.contact) || '';
-    var registeredDate = (data && data.registeredDate) || todayKey_();
-
-    var sheet = getSheet_(SHEET_STUDENTS, STUDENTS_HEADERS);
-    var id = Utilities.getUuid();
-    // Contact는 일단 비워서 행을 만들고, 실제 그 셀에 "서식(텍스트) -> 값" 순서로 확실히 써서
-    // 010으로 시작하는 번호의 앞자리 0이 숫자로 인식돼 사라지는 걸 막는다.
-    sheet.appendRow([id, name, '', registeredDate, '']);
-    var newRow = sheet.getLastRow();
-    var contactCol = STUDENTS_HEADERS.indexOf('Contact') + 1;
-    sheet.getRange(newRow, contactCol).setNumberFormat('@').setValue(contact);
-    return { id: id, name: name };
-  } finally {
-    lock.releaseLock();
+  .wrap{
+    max-width:860px;
+    margin:0 auto;
+    padding:32px 20px 64px;
   }
-}
 
-// 수강생 관리 화면에서 이름 / 연락처 / 등록일 / 강사메모를 인라인으로 수정할 때 호출
-function updateStudentInfo(studentId, patch) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    ensureSetup_();
-    if (patch.name !== undefined && !String(patch.name).trim()) {
-      throw new Error('이름은 비워둘 수 없습니다.');
-    }
-    var sheet = getSheet_(SHEET_STUDENTS, STUDENTS_HEADERS);
-    var rowIndex = findRowIndexById_(sheet, studentId);
-    if (rowIndex === -1) throw new Error('수강생을 찾을 수 없습니다.');
-
-    var fieldToColumn = { name: 'Name', contact: 'Contact', registeredDate: 'RegisteredDate', memo: 'Memo' };
-    Object.keys(fieldToColumn).forEach(function (key) {
-      if (patch[key] === undefined) return;
-      var col = STUDENTS_HEADERS.indexOf(fieldToColumn[key]) + 1;
-      var cell = sheet.getRange(rowIndex + 1, col);
-      // 연락처는 앞자리 0이 숫자로 인식돼 사라지지 않도록 "서식(텍스트) -> 값" 순서로 쓴다.
-      if (key === 'contact') cell.setNumberFormat('@');
-      cell.setValue(patch[key]);
-    });
-  } finally {
-    lock.releaseLock();
+  .usage-guide{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:4px 18px;
+    margin-bottom:22px;
+    box-shadow:var(--shadow);
   }
-  return getStudentRoster();
-}
-
-// 수강생을 명부에서 삭제하고, 그 수강생의 회차 기록도 전부 함께 삭제한다. 되돌릴 수 없다.
-function deleteStudent(studentId) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    ensureSetup_();
-
-    var studentsSheet = getSheet_(SHEET_STUDENTS, STUDENTS_HEADERS);
-    var rowIndex = findRowIndexById_(studentsSheet, studentId);
-    if (rowIndex === -1) throw new Error('수강생을 찾을 수 없습니다.');
-    studentsSheet.deleteRow(rowIndex + 1);
-
-    // 해당 학생의 회차 기록을 전부 지운다. 아래에서 위로 지워야 행 번호가 밀리지 않는다.
-    var sessionsSheet = getSheet_(SHEET_SESSIONS, SESSIONS_HEADERS);
-    var sessions = readSessions_(studentId).sort(function (a, b) { return b.rowIndex - a.rowIndex; });
-    sessions.forEach(function (s) { sessionsSheet.deleteRow(s.rowIndex + 1); });
-  } finally {
-    lock.releaseLock();
+  .usage-guide summary{
+    cursor:pointer;
+    padding:12px 0;
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--ink);
+    list-style:none;
   }
-  return getStudentRoster();
-}
-
-// 새 회차 평가 저장 - 10개 항목 점수와 수업일을 받아 한 행으로 쌓는다.
-function addSession(studentId, dateStr, itemScores) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    ensureSetup_();
-    var student = findStudent_(studentId);
-    if (!student) throw new Error('수강생을 찾을 수 없습니다.');
-
-    var sessionsSheet = getSheet_(SHEET_SESSIONS, SESSIONS_HEADERS);
-    var existing = readSessions_(studentId);
-    var sessionNo = existing.length + 1;
-    var prevScore = existing.length ? existing[existing.length - 1].total : null;
-
-    appendSessionRow_(sessionsSheet, studentId, student.name, (dateStr || todayKey_()), sessionNo, itemScores || {}, prevScore);
-  } finally {
-    lock.releaseLock();
+  .usage-guide summary::-webkit-details-marker{ display:none; }
+  .usage-guide summary::before{ content:"▸ "; color:var(--accent); }
+  .usage-guide[open] summary::before{ content:"▾ "; }
+  .usage-guide ol{
+    margin:0;
+    padding:0 0 16px 20px;
+    font-size:13.5px;
+    line-height:1.9;
+    color:var(--ink-2);
   }
-  return { summary: getStudentSummary(studentId), sessions: getSessions(studentId) };
-}
+  .usage-guide ol b{ color:var(--ink); }
 
-// 이미 저장된 회차의 수업일/항목 점수를 고쳐 쓴다. 회차 번호·이전점수·생성일시는 그대로 둔다.
-function updateSession(sessionId, studentId, dateStr, itemScores) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    ensureSetup_();
-    var sheet = getSheet_(SHEET_SESSIONS, SESSIONS_HEADERS);
-    var rows = sheet.getDataRange().getValues();
-    var idx = headerIndex_(rows[0]);
-
-    var rowIndex = -1;
-    for (var r = 1; r < rows.length; r++) {
-      if (rows[r][idx.SessionId] === sessionId && rows[r][idx.StudentId] === studentId) { rowIndex = r; break; }
-    }
-    if (rowIndex === -1) throw new Error('수정할 회차를 찾을 수 없습니다.');
-
-    var total = computeTotal_(itemScores || {});
-    var itemValues = ITEMS.map(function (item) { return clampScore_((itemScores || {})[item.id]); });
-
-    sheet.getRange(rowIndex + 1, idx.Date + 1).setValue(dateStr || todayKey_());
-    sheet.getRange(rowIndex + 1, idx[ITEMS[0].id] + 1, 1, ITEMS.length).setValues([itemValues]);
-    sheet.getRange(rowIndex + 1, idx.TotalScore + 1).setValue(total);
-  } finally {
-    lock.releaseLock();
+  .tabs{
+    display:flex;
+    gap:8px;
+    margin-bottom:22px;
+    border-bottom:1px solid var(--line);
   }
-  return { summary: getStudentSummary(studentId), sessions: getSessions(studentId) };
-}
-
-// 잘못 입력한 마지막 회차를 삭제 (되돌리기). 과거 회차는 손대지 않는다.
-function deleteLastSession(studentId) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    ensureSetup_();
-    var sessionsSheet = getSheet_(SHEET_SESSIONS, SESSIONS_HEADERS);
-    var sessions = readSessions_(studentId);
-    if (!sessions.length) throw new Error('삭제할 회차가 없습니다.');
-    var last = sessions[sessions.length - 1];
-    sessionsSheet.deleteRow(last.rowIndex + 1);
-  } finally {
-    lock.releaseLock();
+  .tab-btn{
+    font:inherit;
+    font-size:14px;
+    font-weight:700;
+    color:var(--ink-muted);
+    background:transparent;
+    border:none;
+    padding:10px 4px;
+    margin-bottom:-1px;
+    border-bottom:2px solid transparent;
+    cursor:pointer;
   }
-  return { summary: getStudentSummary(studentId), sessions: getSessions(studentId) };
-}
+  .tab-btn.is-active{ color:var(--accent); border-bottom-color:var(--accent); }
+  .tab-btn:hover{ color:var(--ink); }
+  .tab-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
-// SESSIONS_HEADERS의 순서에 맞춰 행을 조립한다 (헤더 이름 기준이라 열 순서를 바꿔도 안전하다).
-function appendSessionRow_(sheet, studentId, studentName, dateStr, sessionNo, itemScores, prevScore) {
-  var total = computeTotal_(itemScores);
-  var record = {
-    Date: dateStr,
-    StudentName: studentName,
-    SessionNo: sessionNo,
-    TotalScore: total,
-    PrevScore: (prevScore == null ? '' : prevScore),
-    StudentId: studentId,
-    SessionId: Utilities.getUuid(),
-    CreatedAt: new Date()
-  };
-  ITEMS.forEach(function (item) { record[item.id] = clampScore_(itemScores[item.id]); });
-
-  var row = SESSIONS_HEADERS.map(function (header) { return record[header]; });
-  sheet.appendRow(row);
-  return total;
-}
-
-function computeTotal_(itemScores) {
-  var sum = 0;
-  ITEMS.forEach(function (item) { sum += clampScore_(itemScores[item.id]); });
-  return Math.round(sum / ITEMS.length);
-}
-
-function clampScore_(v) {
-  var n = Math.round(Number(v) || 0);
-  return Math.max(0, Math.min(100, n));
-}
-
-/* ---------------------------------------------------------------------- */
-/* 내부 유틸                                                                */
-/* ---------------------------------------------------------------------- */
-
-function headerIndex_(headerRow) {
-  var idx = {};
-  headerRow.forEach(function (h, i) { idx[h] = i; });
-  return idx;
-}
-
-function findRowIndexById_(sheet, id) {
-  var rows = sheet.getDataRange().getValues();
-  for (var i = 1; i < rows.length; i++) {
-    if (rows[i][0] === id) return i;
+  .panel-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:20px 22px 22px;
+    box-shadow:var(--shadow);
+    margin-bottom:24px;
   }
-  return -1;
-}
 
-function readAllStudents_() {
-  var sheet = getSheet_(SHEET_STUDENTS, STUDENTS_HEADERS);
-  var rows = sheet.getDataRange().getValues();
-  var idx = headerIndex_(rows[0]);
-  var list = [];
-  for (var i = 1; i < rows.length; i++) {
-    if (!rows[i][idx.StudentId]) continue;
-    list.push({
-      id: rows[i][idx.StudentId],
-      name: rows[i][idx.Name],
-      contact: rows[i][idx.Contact] || '',
-      registeredDate: formatDateCell_(rows[i][idx.RegisteredDate]),
-      memo: rows[i][idx.Memo] || ''
-    });
+  .roster-search{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:14px;
   }
-  return list;
-}
-
-function findStudent_(studentId) {
-  var students = readAllStudents_();
-  for (var i = 0; i < students.length; i++) {
-    if (students[i].id === studentId) return students[i];
+  .roster-search input{
+    flex:1;
+    font:inherit;
+    font-size:14px;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:9px;
+    padding:8px 12px;
   }
-  return null;
-}
-
-// 특정 학생의 회차 기록을 회차 번호 오름차순으로 반환 (items는 {itemId: value} 형태)
-function readSessions_(studentId) {
-  var sheet = getSheet_(SHEET_SESSIONS, SESSIONS_HEADERS);
-  var rows = sheet.getDataRange().getValues();
-  var idx = headerIndex_(rows[0]);
-  var list = [];
-  for (var r = 1; r < rows.length; r++) {
-    var row = rows[r];
-    if (row[idx.StudentId] !== studentId) continue;
-    var items = {};
-    ITEMS.forEach(function (item) { items[item.id] = Number(row[idx[item.id]]) || 0; });
-    list.push({
-      sessionId: row[idx.SessionId],
-      studentId: row[idx.StudentId],
-      studentName: row[idx.StudentName],
-      date: formatDateCell_(row[idx.Date]),
-      sessionNo: Number(row[idx.SessionNo]) || 0,
-      items: items,
-      total: Number(row[idx.TotalScore]) || 0,
-      prevScore: row[idx.PrevScore] === '' ? null : Number(row[idx.PrevScore]),
-      rowIndex: r
-    });
+  .roster-search input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .roster-count{
+    font-size:12.5px;
+    color:var(--ink-muted);
+    white-space:nowrap;
   }
-  list.sort(function (a, b) { return a.sessionNo - b.sessionNo; });
-  return list;
-}
 
-// 차샘 운전교실 점수 기준: 0~59 집중 연습 / 60~74 연습 필요 / 75~89 가능 / 90~100 능숙
-function levelFromScore_(v) {
-  if (v >= 90) return '능숙';
-  if (v >= 75) return '가능';
-  if (v >= 60) return '연습 필요';
-  return '집중 연습';
-}
+  .pagination{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:6px;
+    margin-top:14px;
+    flex-wrap:wrap;
+  }
+  .page-btn{
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    min-width:32px;
+    padding:6px 8px;
+    color:var(--ink-2);
+    background:var(--surface);
+    border:1px solid var(--line-strong);
+    border-radius:8px;
+    cursor:pointer;
+  }
+  .page-btn:hover{ border-color:var(--accent); color:var(--accent); }
+  .page-btn.is-active{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .page-btn:disabled{ opacity:0.4; cursor:default; }
+  .page-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
-function todayKey_() {
-  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-}
+  .table-scroll{ overflow-x:auto; }
 
-function formatDateCell_(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  return v || '';
-}
+  .roster-table, .history-table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:640px;
+  }
+  .roster-table th, .history-table th{
+    text-align:left;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink-muted);
+    background:var(--surface-2);
+    padding:8px 10px;
+    white-space:nowrap;
+  }
+  .roster-table th, .history-table th{ text-align:center; }
+  .roster-table td:nth-child(4),
+  .roster-table td:nth-child(5),
+  .roster-table td:nth-child(6){ text-align:center; }
+  .history-table td{ text-align:center; }
+  .roster-table td, .history-table td{
+    padding:8px 10px;
+    font-size:13px;
+    border-bottom:1px solid var(--line);
+    white-space:nowrap;
+  }
+  .roster-table tbody tr:last-child td, .history-table tbody tr:last-child td{ border-bottom:none; }
+  .roster-table td.name{ font-weight:700; white-space:normal; }
+  .empty-row{ color:var(--ink-muted); text-align:center; padding:20px 0 !important; white-space:normal; }
+
+  .dtxt-up{ color:var(--good); font-weight:700; }
+  .dtxt-down{ color:var(--bad); font-weight:700; }
+  .dtxt-flat{ color:var(--ink-muted); }
+
+  .cell-input{
+    font:inherit;
+    font-size:13px;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:7px;
+    padding:5px 7px;
+    width:100%;
+    min-width:100px;
+  }
+  .cell-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .cell-memo{ min-width:180px; }
+
+  .roster-link{
+    font:inherit;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--accent);
+    background:var(--accent-soft);
+    border:none;
+    border-radius:7px;
+    padding:6px 10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .roster-link:hover{ filter:brightness(1.05); }
+
+  .field-inline{
+    display:flex;
+    gap:20px;
+    flex-wrap:wrap;
+    font-size:13px;
+    color:var(--ink-2);
+    margin-bottom:16px;
+  }
+  .field-inline b{ color:var(--ink); }
+
+  .subgroup-title{
+    font-size:13.5px;
+    font-weight:700;
+    color:var(--ink);
+    padding:14px 0 6px;
+  }
+  .subgroup-title span{
+    display:inline-block;
+    font-size:11px;
+    font-weight:700;
+    color:var(--accent);
+    background:var(--accent-soft);
+    border-radius:999px;
+    padding:2px 8px;
+    margin-right:8px;
+    vertical-align:1px;
+  }
+
+  .session-head{ align-items:center; }
+  .date-input{
+    font:inherit;
+    font-size:13px;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:8px;
+    padding:6px 9px;
+  }
+  .date-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  .edit-banner{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    background:var(--accent-soft);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 14px;
+    margin-top:12px;
+    font-size:13px;
+    color:var(--ink);
+  }
+  .edit-banner button{
+    font:inherit;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--ink-2);
+    background:var(--surface);
+    border:1px solid var(--line-strong);
+    border-radius:8px;
+    padding:5px 12px;
+    cursor:pointer;
+  }
+  .edit-banner button:hover{ border-color:var(--bad); color:var(--bad); }
+
+  .row-edit-btn{
+    font:inherit;
+    font-size:12px;
+    font-weight:700;
+    color:var(--accent);
+    background:var(--accent-soft);
+    border:none;
+    border-radius:7px;
+    padding:5px 10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .row-edit-btn:hover{ filter:brightness(1.05); }
+
+  .row-delete-btn{
+    font:inherit;
+    font-size:12px;
+    font-weight:700;
+    color:var(--bad);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:7px;
+    padding:5px 10px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .row-delete-btn:hover{ background:var(--bad); color:#fff; border-color:var(--bad); }
+
+  .session-actions{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    padding-top:16px;
+    margin-top:6px;
+    border-top:1px solid var(--line);
+  }
+  .session-preview{ font-size:13.5px; color:var(--ink-2); }
+  .session-preview b{ font-family:"Gowun Dodum", sans-serif; font-size:18px; color:var(--accent); }
+  #saveSessionBtn{
+    font:inherit;
+    font-size:14px;
+    font-weight:700;
+    color:#fff;
+    background:var(--accent);
+    border:none;
+    border-radius:10px;
+    padding:10px 20px;
+    cursor:pointer;
+  }
+  #saveSessionBtn:hover{ filter:brightness(1.08); }
+  #saveSessionBtn:disabled{ opacity:0.6; cursor:default; }
+
+  header.top{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-bottom:28px;
+  }
+  .eyebrow{
+    font-size:12.5px;
+    font-weight:700;
+    letter-spacing:0.08em;
+    color:var(--accent);
+    text-transform:uppercase;
+  }
+  h1{
+    font-family:"Gowun Dodum", "Noto Sans KR", sans-serif;
+    font-size:clamp(26px, 4vw, 34px);
+    line-height:1.25;
+    margin:0;
+    text-wrap:balance;
+  }
+  .sub{
+    margin:0;
+    color:var(--ink-2);
+    font-size:14.5px;
+    line-height:1.6;
+    max-width:60ch;
+  }
+
+  .group{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:6px 22px 14px;
+    margin-bottom:18px;
+    box-shadow:var(--shadow);
+  }
+  .group-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:10px;
+    padding:16px 0 10px;
+    border-bottom:1px solid var(--line);
+    margin-bottom:6px;
+  }
+  .group-title{
+    font-size:15px;
+    font-weight:700;
+  }
+  #tabChart .group-title{ font-size:19px; }
+  .group-title span{
+    display:inline-block;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--accent);
+    background:var(--accent-soft);
+    border-radius:999px;
+    padding:2px 9px;
+    margin-right:8px;
+    vertical-align:2px;
+  }
+  .group-title .session-no-line,
+  .group-title #sessionFormLabel{
+    display:inline;
+    font-size:inherit;
+    font-weight:inherit;
+    color:inherit;
+    background:none;
+    border-radius:0;
+    padding:0;
+    margin-right:0;
+    vertical-align:baseline;
+  }
+  .group-title .session-no-line{
+    font-weight:600;
+    color:var(--ink-muted);
+  }
+  .session-no-line::before{ content:" · "; color:var(--ink-muted); }
+  .row{
+    display:grid;
+    grid-template-columns:96px 1fr 60px;
+    align-items:center;
+    gap:14px;
+    padding:11px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .row:last-child{ border-bottom:none; }
+  .row-label{
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--ink);
+  }
+
+  .tier-range{
+    -webkit-appearance:none;
+    appearance:none;
+    width:100%;
+    height:14px;
+    border-radius:999px;
+    background:var(--surface-2);
+    cursor:pointer;
+  }
+  .tier-range::-webkit-slider-runnable-track{
+    height:14px;
+    border-radius:999px;
+    background:transparent;
+  }
+  .tier-range::-moz-range-track{
+    height:14px;
+    border-radius:999px;
+    background:var(--surface-2);
+  }
+  .tier-range::-moz-range-progress{
+    height:14px;
+    border-radius:999px;
+    background:var(--fill-color, var(--accent));
+  }
+  .tier-range::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:24px;
+    height:24px;
+    margin-top:-5px;
+    border-radius:50%;
+    background:var(--surface);
+    border:3px solid var(--fill-color, var(--accent));
+    box-shadow:0 1px 3px rgba(0,0,0,0.25);
+    cursor:grab;
+  }
+  .tier-range::-moz-range-thumb{
+    width:24px;
+    height:24px;
+    border-radius:50%;
+    background:var(--surface);
+    border:3px solid var(--fill-color, var(--accent));
+    box-shadow:0 1px 3px rgba(0,0,0,0.25);
+    cursor:grab;
+  }
+  .tier-range:active::-webkit-slider-thumb{ cursor:grabbing; }
+  .tier-range:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+
+  .score-input{
+    width:60px;
+    font:inherit;
+    font-size:14px;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+    text-align:right;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:8px;
+    padding:6px 8px;
+  }
+  .score-input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .score-input.tier-master{ border-color:var(--good); }
+  .score-input.tier-ok{ border-color:var(--tier-ok); }
+  .score-input.tier-practice{ border-color:var(--warn); }
+  .score-input.tier-focus{ border-color:var(--bad); }
+
+  .score-chip{
+    display:inline-block;
+    min-width:34px;
+    text-align:center;
+    padding:3px 9px;
+    border-radius:7px;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+  }
+  .score-chip.tier-master{ background:var(--good-soft); color:var(--good); }
+  .score-chip.tier-ok{ background:var(--tier-ok-soft); color:var(--tier-ok); }
+  .score-chip.tier-practice{ background:var(--warn-soft); color:var(--warn); }
+  .score-chip.tier-focus{ background:var(--bad-soft); color:var(--bad); }
+
+  .report-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:20px 22px 22px;
+    margin-bottom:26px;
+    box-shadow:var(--shadow);
+  }
+  .report-top{
+    display:grid;
+    grid-template-columns:1.1fr 1fr 1fr 1fr;
+    gap:12px;
+    margin-bottom:14px;
+  }
+  .report-top .field{ text-align:center; }
+  .field label{
+    display:block;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink-muted);
+    letter-spacing:0.02em;
+    margin-bottom:6px;
+  }
+  .field select{
+    width:100%;
+    font:inherit;
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:8px;
+    padding:6px 10px;
+    text-align:center;
+    text-align-last:center;
+  }
+  .field select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .student-search{
+    width:100%;
+    font:inherit;
+    font-size:13px;
+    color:var(--ink);
+    background:var(--surface);
+    border:1px solid var(--line-strong);
+    border-radius:8px;
+    padding:6px 8px;
+    margin-bottom:6px;
+    text-align:center;
+  }
+  .student-search:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .field-value{
+    font-family:"Gowun Dodum", sans-serif;
+    font-size:27px;
+    color:var(--ink);
+    padding-top:2px;
+  }
+  #reportAvg{ color:var(--accent); font-weight:700; font-size:40px; display:block; padding:4px 0; }
+  .field-value.delta-up{ color:var(--good); }
+  .field-value.delta-down{ color:var(--bad); }
+  .field-value.delta-flat{ color:var(--ink-muted); font-family:"Noto Sans KR", sans-serif; font-size:15px; font-weight:600; }
+
+  .add-student{
+    margin-bottom:18px;
+    padding-bottom:16px;
+    border-bottom:1px solid var(--line);
+  }
+  .add-student label{
+    display:block;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink-muted);
+    margin-bottom:6px;
+  }
+  .add-student-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .add-student-row input{
+    flex:1 1 140px;
+    font:inherit;
+    font-size:14px;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:9px;
+    padding:8px 10px;
+  }
+  .add-student-row input:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .add-student-row button{
+    font:inherit;
+    font-size:13.5px;
+    font-weight:700;
+    color:#fff;
+    background:var(--accent);
+    border:none;
+    border-radius:9px;
+    padding:8px 16px;
+    cursor:pointer;
+  }
+  .add-student-row button:hover{ filter:brightness(1.08); }
+  .add-student-row button:disabled{ opacity:0.6; cursor:default; }
+
+  .report-table{
+    width:100%;
+    border-collapse:collapse;
+    margin-bottom:18px;
+  }
+  .report-table th{
+    text-align:center;
+    font-size:12px;
+    font-weight:700;
+    color:var(--ink-muted);
+    background:var(--surface-2);
+    padding:8px 12px;
+  }
+  .report-table th:first-child{ border-radius:8px 0 0 8px; }
+  .report-table th:last-child{ border-radius:0 8px 8px 0; }
+  .report-table td{
+    padding:9px 12px;
+    font-size:13.5px;
+    border-bottom:1px solid var(--line);
+  }
+  .report-table td:nth-child(2),
+  .report-table td:nth-child(3){ text-align:center; }
+  .report-table tbody tr:last-child td{ border-bottom:none; }
+  .report-table td.score{
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+  }
+  .report-table td.muted{ color:var(--ink-muted); }
+
+  .report-focus{
+    background:var(--warn-soft);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:14px 18px;
+    margin-bottom:16px;
+  }
+  .report-focus-head{
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink);
+    margin-bottom:8px;
+  }
+  .report-focus ol{
+    margin:0;
+    padding-left:20px;
+    font-size:13.5px;
+    color:var(--ink-2);
+    line-height:1.7;
+  }
+  .report-focus ol b{ color:var(--ink); }
+  .report-focus p{
+    margin:0;
+    font-size:13.5px;
+    color:var(--ink-2);
+  }
+
+  .chart-student-picker{
+    display:flex;
+    gap:6px;
+    margin-top:10px;
+    flex-wrap:nowrap;
+  }
+  .chart-student-picker .student-search{
+    flex:0.7 1 0;
+    min-width:0;
+    margin-bottom:0;
+  }
+  .chart-student-picker select{
+    flex:1 1 0;
+    min-width:0;
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:8px;
+    padding:6px 6px;
+  }
+  .chart-student-picker #chartMetricSelect{ flex:1.6 1 0; }
+  .chart-student-picker select:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  .chart-granularity{
+    display:flex;
+    gap:4px;
+    background:var(--surface-2);
+    border-radius:9px;
+    padding:3px;
+    margin-top:10px;
+    width:100%;
+  }
+  .gran-btn{
+    flex:1 1 0;
+    font:inherit;
+    font-size:13px;
+    font-weight:700;
+    color:var(--ink-2);
+    background:transparent;
+    border:none;
+    border-radius:7px;
+    padding:8px 14px;
+    cursor:pointer;
+  }
+  .gran-btn.is-active{ background:var(--accent); color:#fff; }
+  .gran-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+
+  .chart-wrap{
+    padding:10px 0 6px;
+  }
+  .chart-wrap svg{
+    display:block;
+    width:100%;
+    height:auto;
+  }
+  .chart-empty{
+    margin:0;
+    padding:24px 0;
+    text-align:center;
+    color:var(--ink-muted);
+    font-size:13px;
+  }
+
+  .item-bar-list{ padding-bottom:4px; }
+  .item-bar-row{
+    display:grid;
+    grid-template-columns:88px 1fr 42px;
+    align-items:center;
+    gap:12px;
+    padding:9px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .item-bar-row:last-child{ border-bottom:none; }
+  .item-bar-label{ font-size:13px; font-weight:600; color:var(--ink); }
+  .item-bar-track{
+    position:relative;
+    height:14px;
+    border-radius:999px;
+    background:var(--surface-2);
+    overflow:hidden;
+  }
+  .item-bar-fill{
+    position:absolute;
+    inset:0 auto 0 0;
+    height:100%;
+    border-radius:999px;
+  }
+  .item-bar-fill.tier-master{ background:var(--good); }
+  .item-bar-fill.tier-ok{ background:var(--tier-ok); }
+  .item-bar-fill.tier-practice{ background:var(--warn); }
+  .item-bar-fill.tier-focus{ background:var(--bad); }
+  .item-bar-value{
+    font-size:13px;
+    font-weight:700;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+    color:var(--ink);
+  }
+
+  .focus-memo{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px solid var(--line);
+  }
+  .focus-memo label{
+    display:block;
+    font-size:11.5px;
+    font-weight:700;
+    color:var(--ink-muted);
+    margin-bottom:6px;
+  }
+  .focus-memo textarea{
+    width:100%;
+    min-height:56px;
+    resize:vertical;
+    font:inherit;
+    font-size:13px;
+    color:var(--ink);
+    background:var(--surface);
+    border:1px solid var(--line-strong);
+    border-radius:9px;
+    padding:8px 10px;
+  }
+  .focus-memo textarea:focus-visible{ outline:2px solid var(--accent); outline-offset:1px; }
+  .focus-memo-status{
+    display:block;
+    margin-top:5px;
+    font-size:11.5px;
+    color:var(--good);
+    min-height:14px;
+  }
+
+  footer{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+    padding-top:6px;
+  }
+  .note{
+    font-size:12px;
+    color:var(--ink-muted);
+  }
+  button.reset{
+    font:inherit;
+    font-size:13px;
+    font-weight:600;
+    color:var(--ink-2);
+    background:var(--surface);
+    border:1px solid var(--line-strong);
+    border-radius:9px;
+    padding:8px 14px;
+    cursor:pointer;
+  }
+  button.reset:hover{ border-color:var(--bad); color:var(--bad); }
+  button.reset:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  button.reset:disabled{ opacity:0.6; cursor:default; }
+
+  @media (max-width:520px){
+    .row{ grid-template-columns:76px 1fr 52px; gap:10px; }
+    .row-label{ font-size:12.5px; }
+    .report-top{ grid-template-columns:1fr 1fr; }
+
+    .group-title{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; }
+    .group-title .session-no-line{ display:block; font-size:12.5px; }
+    .session-no-line::before{ content:""; }
+
+    .usage-guide{ padding:4px 12px; }
+  }
