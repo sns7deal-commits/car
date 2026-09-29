@@ -472,7 +472,7 @@ chartStudentSearchEl.addEventListener("input", makeStudentSearchHandler(chartStu
     loadStudent(studentSelect.value);
   });
 
-  chartStudentSearchEl.addEventListener("input", function () { populateStudentSelect(false); });
+  
   chartStudentSelectEl.addEventListener("change", function () {
     studentSelect.value = chartStudentSelectEl.value;
     loadStudent(chartStudentSelectEl.value);
