@@ -448,7 +448,25 @@
     loadStudent(target);
   }
 
-  studentSearchEl.addEventListener("input", function () { populateStudentSelect(false); });
+  var searchTimer = null;
+function makeStudentSearchHandler(searchEl) {
+  return function () {
+    populateStudentSelect(false);
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(function () {
+      if (!searchEl.value.trim()) return;
+      var list = filterStudents(searchEl.value);
+      if (!list.length) return;
+      var firstId = list[0].id;
+      if (firstId === currentStudentId) return;
+      studentSelect.value = firstId;
+      chartStudentSelectEl.value = firstId;
+      loadStudent(firstId);
+    }, 400);
+  };
+}
+studentSearchEl.addEventListener("input", makeStudentSearchHandler(studentSearchEl));
+chartStudentSearchEl.addEventListener("input", makeStudentSearchHandler(chartStudentSearchEl));
   studentSelect.addEventListener("change", function () {
     chartStudentSelectEl.value = studentSelect.value;
     loadStudent(studentSelect.value);
