@@ -10,7 +10,7 @@
   // 1) Apps Script 프로젝트를 "웹 앱"으로 배포(또는 재배포)해서 URL을 발급받는다.
   // 2) 아래 APPS_SCRIPT_URL 값을 그 배포 URL("...../exec")로 바꾼다.
   // ====================================================================
-  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwRtWYjdZJnN8pVjuGS7i-JwiS25sb2Vq-fuSwAPiLJoa_myU9xRs-kEkEFHOh865dM/exec";
+  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrDG11aRctV-9vIKyqxkC9vJ2oESiDXuHE_cwdMAUxHYOwbaQ4NXfiEUQwGH4VqPLo/exec";
 
   function callApi(action, data) {
     return fetch(APPS_SCRIPT_URL, {
