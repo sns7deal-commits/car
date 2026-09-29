@@ -12,18 +12,26 @@
   // ====================================================================
   var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrDG11aRctV-9vIKyqxkC9vJ2oESiDXuHE_cwdMAUxHYOwbaQ4NXfiEUQwGH4VqPLo/exec";
 
-  function callApi(action, data) {
+   function callApi(action, data, attempt) {
+    attempt = attempt || 1;
     return fetch(APPS_SCRIPT_URL, {
       method: "POST",
-      // Content-Type을 application/json으로 두면 브라우저가 CORS 사전요청(preflight)을
-      // 보내는데, Apps Script 웹앱은 이를 처리하지 못해 요청이 실패합니다.
-      // text/plain으로 보내면 사전요청 없이 바로 전송되고, 서버(doPost)는 어차피
-      // JSON.parse로 읽으므로 내용은 그대로 JSON이어도 문제없습니다.
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: action, data: data || {} })
     })
-      .then(function (res) { return res.json(); })
-      .then(function (json) {
+      .then(function (res) { return res.text(); })
+      .then(function (text) {
+        var json;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          // 조회(get...) 요청만 자동 재시도한다. 등록/수정/삭제는 중복 저장을 막기 위해 재시도하지 않는다.
+          if (attempt < 3 && /^get/.test(action)) {
+            return new Promise(function (resolve) { setTimeout(resolve, 800 * attempt); })
+              .then(function () { return callApi(action, data, attempt + 1); });
+          }
+          throw new Error("서버 응답이 올바르지 않아요. 잠시 후 다시 시도해 주세요.");
+        }
         if (!json || !json.ok) throw new Error((json && json.error) || "알 수 없는 오류");
         return json.result;
       });
