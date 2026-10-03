@@ -74,6 +74,7 @@
   var newStudentName = document.getElementById("newStudentName");
   var newStudentContact = document.getElementById("newStudentContact");
   var newStudentDate = document.getElementById("newStudentDate");
+  var newStudentEnd = document.getElementById("newStudentEnd");
   var addStudentBtn = document.getElementById("addStudentBtn");
   var newStudentFee = document.getElementById("newStudentFee");
   var newStudentAmount = document.getElementById("newStudentAmount");
@@ -231,11 +232,11 @@
   function renderRoster(rows, filteredTotal, term) {
     rosterBody.innerHTML = "";
     if (!rosterAllRows.length) {
-      rosterBody.innerHTML = '<tr><td colspan="13" class="empty-row">등록된 수강생이 없어요. 위에서 추가해 보세요.</td></tr>';
+      rosterBody.innerHTML = '<tr><td colspan="14" class="empty-row">등록된 수강생이 없어요. 위에서 추가해 보세요.</td></tr>';
       return;
     }
     if (term && filteredTotal === 0) {
-      rosterBody.innerHTML = '<tr><td colspan="13" class="empty-row">"' + term + '" 검색 결과가 없어요.</td></tr>';
+      rosterBody.innerHTML = '<tr><td colspan="14" class="empty-row">"' + term + '" 검색 결과가 없어요.</td></tr>';
       return;
     }
     rows.forEach(function (r) {
@@ -245,6 +246,7 @@
 
       tr.appendChild(makeEditableCell(r.id, "contact", r.contact, "text", "연락처"));
       tr.appendChild(makeEditableCell(r.id, "registeredDate", r.registeredDate, "date"));
+      tr.appendChild(makeEditableCell(r.id, "endDate", r.endDate || endDateOf(r.registeredDate), "date"));
       tr.appendChild(makeFeeCell(r));
 
       var tdPaid = document.createElement("td");
@@ -309,6 +311,13 @@
         b.addEventListener("click", function () { printDocs(r, def[1]); });
         tdLink.appendChild(b);
       });
+
+      var delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "roster-link roster-del";
+      delBtn.textContent = "삭제";
+      delBtn.addEventListener("click", function () { deleteStudentRow(r); });
+      tdLink.appendChild(delBtn);
       tr.appendChild(tdLink);
 
       rosterBody.appendChild(tr);
@@ -563,6 +572,7 @@
   var pdPaidOff = document.getElementById("pdPaidOff");
   var pdSave = document.getElementById("pdSave");
   var pdUnpaid = document.getElementById("pdUnpaid");
+  var pdMsg = document.getElementById("pdMsg");
   var pdStudentId = null;
 
   function pdStudent() {
@@ -578,6 +588,7 @@
     pdAmount.value = "";
     pdMemo.value = "";
     pdPaidOff.checked = false;
+    pdMsg.hidden = true;
     renderPayDialog();
     if (payDialog.showModal) payDialog.showModal(); else payDialog.setAttribute("open", "");
   }
@@ -620,7 +631,7 @@
             applyRosterView();
             renderPayDialog();
           })
-          .catch(onError);
+          .catch(pdError);
       });
       tdDel.appendChild(del);
       tr.appendChild(tdDel);
@@ -628,7 +639,18 @@
     });
   }
 
+  // 팝업 안에 오류를 크게 보여준다 (화면 아래쪽 작은 글씨를 놓치지 않도록)
+  function pdError(err) {
+    console.error(err);
+    var m = err && err.message ? err.message : "저장에 실패했어요.";
+    if (/알 수 없는 요청/.test(m)) m += " → 서버(Apps Script)가 옛날 버전이에요. 새 코드를 붙여넣고 '배포 관리 → 새 버전'으로 다시 배포해 주세요.";
+    pdMsg.textContent = "저장 실패: " + m;
+    pdMsg.hidden = false;
+    setStatus("오류: " + m, true);
+  }
+
   function pdApply(rows, msg) {
+    pdMsg.hidden = true;
     rosterAllRows = rows;
     setStatus(msg + " · " + nowLabel());
     applyRosterView();
@@ -642,7 +664,7 @@
     var fee = moneyVal(pdFee);
     callApi("updateStudentInfo", { studentId: pdStudentId, patch: { totalFee: fee } })
       .then(function (rows) { pdApply(rows, "저장됨"); })
-      .catch(onError);
+      .catch(pdError);
   });
   pdFee.addEventListener("blur", function () { var r = pdStudent(); if (r) pdFee.value = r.totalFee ? formatWon(r.totalFee) : ""; });
 
@@ -678,13 +700,13 @@
         pdPaidOff.checked = false;
         pdApply(rows, "납입 저장됨");
       })
-      .catch(function (err) { pdSave.disabled = false; onError(err); });
+      .catch(function (err) { pdSave.disabled = false; pdError(err); });
   });
 
   pdUnpaid.addEventListener("click", function () {
     callApi("updateStudentInfo", { studentId: pdStudentId, patch: { paidOff: false } })
       .then(function (rows) { pdApply(rows, "완불 취소됨"); })
-      .catch(onError);
+      .catch(pdError);
   });
   document.getElementById("pdClose").addEventListener("click", function () { payDialog.close(); });
 
@@ -751,7 +773,7 @@
       + '<p>연락처: ' + escHtml(s.contact) + '</p>'
       + '<p>생년월일: </p>'
       + '<p>등록일자: ' + escHtml(dateKor(s.registeredDate)) + '</p>'
-      + '<p class="span2">교습 만료일: ' + escHtml(dateKor(endDateOf(s.registeredDate))) + ' (등록일로부터 2개월)</p>'
+      + '<p class="span2">교습 만료일: ' + escHtml(dateKor(s.endDate || endDateOf(s.registeredDate))) + ' (등록일로부터 2개월)</p>'
       + '</div>'
       + '<h2>[수강 약관]</h2>'
       + '<div class="terms-cols">'
@@ -794,7 +816,7 @@
 
   // ② 실내 운전 수강 확인서
   function buildCertificateHtml(s) {
-    var period = dateKor(s.registeredDate) + "~" + dateKor(endDateOf(s.registeredDate));
+    var period = dateKor(s.registeredDate) + "~" + dateKor(s.endDate || endDateOf(s.registeredDate));
     return ''
       + '<div class="form-page cert-form">'
       + '<h1>실내 운전 수강 확인서</h1>'
@@ -865,6 +887,23 @@
     })).then(function () { setTimeout(function () { window.print(); }, 50); });
   }
 
+  // 수강생 삭제: 회차 평가 기록과 납입 내역까지 함께 지워지므로 한 번 더 확인한다.
+  function deleteStudentRow(r) {
+    var msg = '"' + r.name + '" 수강생을 삭제할까요?\n\n'
+      + '이 수강생의 회차 평가 기록 ' + (r.sessionCount || 0) + '회, 납입 내역 ' + ((r.payments || []).length) + '건도 모두 함께 삭제되며 되돌릴 수 없어요.';
+    if (!confirm(msg)) return;
+    setStatus("삭제 중…");
+    callApi("deleteStudent", { studentId: r.id })
+      .then(function (rows) {
+        rosterAllRows = rows;
+        if (currentStudentId === r.id) currentStudentId = null;
+        setStatus("삭제됨 · " + nowLabel());
+        applyRosterView();
+        refreshStudentSelect();
+      })
+      .catch(onError);
+  }
+
   function makeEditableCell(studentId, field, value, type, placeholder, isMemo) {
     var td = document.createElement("td");
     if (field === "name") td.className = "name";
@@ -908,6 +947,7 @@
       name: name,
       contact: newStudentContact.value.trim(),
       registeredDate: newStudentDate.value,
+      endDate: newStudentEnd.value,
       totalFee: fee,
       paymentAmount: amount,
       paymentMethod: newStudentMethod.value,
@@ -921,6 +961,8 @@
         newStudentAmount.value = "";
         newStudentPaidOff.checked = false;
         newStudentDate.value = todayStr();
+        newStudentEnd.dataset.manual = "";
+        newStudentEnd.value = endDateOf(newStudentDate.value);
         setStatus("등록됨 · " + nowLabel());
         if (printAppOnAdd.checked || printCertOnAdd.checked) {
           printDocs(newStudent, { application: printAppOnAdd.checked, certificate: printCertOnAdd.checked });
@@ -1633,9 +1675,27 @@
   /* ---------------------------------------------------------------- */
 
   newStudentDate.value = todayStr();
+  newStudentEnd.value = endDateOf(newStudentDate.value);
+  // 등록일을 바꾸면 마감일(등록일+2개월)이 자동으로 따라가고, 마감일을 직접 고치면 그 값을 유지한다.
+  newStudentDate.addEventListener("change", function () {
+    if (!newStudentEnd.dataset.manual) newStudentEnd.value = endDateOf(newStudentDate.value);
+  });
+  newStudentEnd.addEventListener("change", function () { newStudentEnd.dataset.manual = "1"; });
   sessionDateEl.value = todayStr();
   renderHistoryHeader();
   refreshRoster();
   refreshStudentSelect();
+
+  // 서버(Apps Script)가 옛날 버전이면 눈에 띄게 알려준다 (그대로 쓰면 납입·삭제·마감일이 저장되지 않는다).
+  callApi("getVersion").then(function (v) {
+    if (v !== "payments-v3") showServerWarn();
+  }).catch(function (err) {
+    if (err && /알 수 없는 요청/.test(err.message || "")) showServerWarn();
+  });
+  function showServerWarn() {
+    var el = document.getElementById("serverWarn");
+    el.textContent = "⚠ 서버(Apps Script)가 옛날 버전이에요. 납입 금액·마감일·삭제가 저장되지 않아요. Apps Script에 새 Code.js를 붙여넣고 '배포 → 배포 관리 → 연필 → 새 버전 → 배포'를 해 주세요.";
+    el.hidden = false;
+  }
 })();
   

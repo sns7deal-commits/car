@@ -13,6 +13,8 @@
 <body>
   <div class="wrap">
 
+    <div class="server-warn" id="serverWarn" hidden></div>
+
     <header class="top">
       <span class="eyebrow">차샘 운전교실</span>
       <h1>수강생 실력 체크리스트</h1>
@@ -48,7 +50,8 @@
           <div class="add-student-row">
             <input type="text" id="newStudentName" placeholder="수강생명">
             <input type="text" id="newStudentContact" placeholder="연락처 (선택)">
-            <input type="date" id="newStudentDate">
+            <label class="date-field"><span>등록일</span><input type="date" id="newStudentDate"></label>
+            <label class="date-field"><span>마감일</span><input type="date" id="newStudentEnd"></label>
           </div>
           <div class="add-student-row add-student-row2">
             <input type="text" id="newStudentFee" inputmode="numeric" placeholder="총 수강료 (원)">
@@ -76,13 +79,13 @@
           <table class="roster-table">
             <thead>
               <tr>
-                <th>수강생명</th><th>연락처</th><th>등록일</th><th>총 수강료</th><th>납입 합계</th><th>납부 상태</th><th>총 수업횟수</th>
+                <th>수강생명</th><th>연락처</th><th>등록일</th><th>교습 마감일</th><th>총 수강료</th><th>납입 합계</th><th>납부 상태</th><th>총 수업횟수</th>
                 <th>최근 점수</th><th>이전 점수</th><th>향상도</th><th>현재 레벨</th>
                 <th>강사 메모</th><th></th>
               </tr>
             </thead>
             <tbody id="rosterBody">
-              <tr><td colspan="13" class="empty-row">불러오는 중…</td></tr>
+              <tr><td colspan="14" class="empty-row">불러오는 중…</td></tr>
             </tbody>
           </table>
         </div>
@@ -284,6 +287,7 @@
         <datalist id="pdMemoList"><option value="계약금"><option value="중도금"><option value="잔금"><option value="전액"></datalist>
       </div>
       <label class="print-check pd-paidoff"><input type="checkbox" id="pdPaidOff"> 완불 처리 (이번 납입으로 모두 납부)</label>
+      <div class="pd-msg" id="pdMsg" role="alert" hidden></div>
       <div class="pd-actions">
         <button type="button" id="pdSave">납입 저장</button>
         <button type="button" id="pdUnpaid" class="pd-ghost" hidden>완불 취소</button>
