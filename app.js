@@ -10,28 +10,20 @@
   // 1) Apps Script 프로젝트를 "웹 앱"으로 배포(또는 재배포)해서 URL을 발급받는다.
   // 2) 아래 APPS_SCRIPT_URL 값을 그 배포 URL("...../exec")로 바꾼다.
   // ====================================================================
-  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzrDG11aRctV-9vIKyqxkC9vJ2oESiDXuHE_cwdMAUxHYOwbaQ4NXfiEUQwGH4VqPLo/exec";
+  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwRtWYjdZJnN8pVjuGS7i-JwiS25sb2Vq-fuSwAPiLJoa_myU9xRs-kEkEFHOh865dM/exec";
 
-   function callApi(action, data, attempt) {
-    attempt = attempt || 1;
+  function callApi(action, data) {
     return fetch(APPS_SCRIPT_URL, {
       method: "POST",
+      // Content-Type을 application/json으로 두면 브라우저가 CORS 사전요청(preflight)을
+      // 보내는데, Apps Script 웹앱은 이를 처리하지 못해 요청이 실패합니다.
+      // text/plain으로 보내면 사전요청 없이 바로 전송되고, 서버(doPost)는 어차피
+      // JSON.parse로 읽으므로 내용은 그대로 JSON이어도 문제없습니다.
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ action: action, data: data || {} })
     })
-      .then(function (res) { return res.text(); })
-      .then(function (text) {
-        var json;
-        try {
-          json = JSON.parse(text);
-        } catch (e) {
-          // 조회(get...) 요청만 자동 재시도한다. 등록/수정/삭제는 중복 저장을 막기 위해 재시도하지 않는다.
-          if (attempt < 3 && /^get/.test(action)) {
-            return new Promise(function (resolve) { setTimeout(resolve, 800 * attempt); })
-              .then(function () { return callApi(action, data, attempt + 1); });
-          }
-          throw new Error("서버 응답이 올바르지 않아요. 잠시 후 다시 시도해 주세요.");
-        }
+      .then(function (res) { return res.json(); })
+      .then(function (json) {
         if (!json || !json.ok) throw new Error((json && json.error) || "알 수 없는 오류");
         return json.result;
       });
@@ -63,7 +55,8 @@
   var panels = {
     roster: document.getElementById("tabRoster"),
     sessions: document.getElementById("tabSessions"),
-    chart: document.getElementById("tabChart")
+    chart: document.getElementById("tabChart"),
+    payments: document.getElementById("tabPayments")
   };
 
   var rosterBody = document.getElementById("rosterBody");
@@ -81,8 +74,14 @@
   var newStudentName = document.getElementById("newStudentName");
   var newStudentContact = document.getElementById("newStudentContact");
   var newStudentDate = document.getElementById("newStudentDate");
-  var newStudentEndDate = document.getElementById("newStudentEndDate");
   var addStudentBtn = document.getElementById("addStudentBtn");
+  var newStudentFee = document.getElementById("newStudentFee");
+  var newStudentAmount = document.getElementById("newStudentAmount");
+  var newStudentPaidOff = document.getElementById("newStudentPaidOff");
+  var newStudentMethod = document.getElementById("newStudentMethod");
+  var printAppOnAdd = document.getElementById("printAppOnAdd");
+  var printCertOnAdd = document.getElementById("printCertOnAdd");
+  var printAreaEl = document.getElementById("printArea");
 
   var studentSelect = document.getElementById("studentSelect");
   var studentSearchEl = document.getElementById("studentSearch");
@@ -188,6 +187,8 @@
 
   // 검색어로 걸러서 5개씩 페이지로 나눠 보여준다 (수강생이 많아져도 표가 안 늘어지도록).
   function applyRosterView() {
+    updatePaymentSummary();
+    renderPayments();
     var term = rosterSearchEl.value.trim().toLowerCase();
     var filtered = term
       ? rosterAllRows.filter(function (r) { return (r.name || "").toLowerCase().indexOf(term) !== -1; })
@@ -230,11 +231,11 @@
   function renderRoster(rows, filteredTotal, term) {
     rosterBody.innerHTML = "";
     if (!rosterAllRows.length) {
-      rosterBody.innerHTML = '<tr><td colspan="12" class="empty-row">등록된 수강생이 없어요. 위에서 추가해 보세요.</td></tr>';
+      rosterBody.innerHTML = '<tr><td colspan="13" class="empty-row">등록된 수강생이 없어요. 위에서 추가해 보세요.</td></tr>';
       return;
     }
     if (term && filteredTotal === 0) {
-      rosterBody.innerHTML = '<tr><td colspan="12" class="empty-row">"' + term + '" 검색 결과가 없어요.</td></tr>';
+      rosterBody.innerHTML = '<tr><td colspan="13" class="empty-row">"' + term + '" 검색 결과가 없어요.</td></tr>';
       return;
     }
     rows.forEach(function (r) {
@@ -244,7 +245,16 @@
 
       tr.appendChild(makeEditableCell(r.id, "contact", r.contact, "text", "연락처"));
       tr.appendChild(makeEditableCell(r.id, "registeredDate", r.registeredDate, "date"));
-      tr.appendChild(makeEditableCell(r.id, "endDate", r.endDate, "date"));
+      tr.appendChild(makeFeeCell(r));
+
+      var tdPaid = document.createElement("td");
+      tdPaid.className = "pay-amount";
+      tdPaid.textContent = r.paidTotal ? formatWon(r.paidTotal) : "-";
+      tr.appendChild(tdPaid);
+
+      var tdStatus = document.createElement("td");
+      tdStatus.innerHTML = statusBadgeHtml(r) + (r.balance > 0 ? '<small class="pay-balance">잔금 ' + formatWon(r.balance) + '</small>' : "");
+      tr.appendChild(tdStatus);
 
       var tdCount = document.createElement("td");
       tdCount.textContent = r.sessionCount + "회";
@@ -269,6 +279,13 @@
       tr.appendChild(makeEditableCell(r.id, "memo", r.memo, "text", "메모", true));
 
       var tdLink = document.createElement("td");
+      var payBtn = document.createElement("button");
+      payBtn.type = "button";
+      payBtn.className = "roster-link roster-pay";
+      payBtn.textContent = "납입 관리";
+      payBtn.addEventListener("click", function () { openPayDialog(r.id); });
+      tdLink.appendChild(payBtn);
+
       var linkBtn = document.createElement("button");
       linkBtn.type = "button";
       linkBtn.className = "roster-link";
@@ -283,45 +300,569 @@
         loadStudent(r.id);
       });
       tdLink.appendChild(linkBtn);
-      tr.appendChild(tdLink);
 
-      var tdDelete = document.createElement("td");
-      var deleteBtn = document.createElement("button");
-      deleteBtn.type = "button";
-      deleteBtn.className = "row-delete-btn";
-      deleteBtn.textContent = "삭제";
-      deleteBtn.addEventListener("click", function () { deleteStudentRow(r.id, r.name); });
-      tdDelete.appendChild(deleteBtn);
-      tr.appendChild(tdDelete);
+      [["성적표 출력", { report: true }], ["신청서 출력", { application: true }], ["확인서 출력", { certificate: true }]].forEach(function (def) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "roster-link roster-print";
+        b.textContent = def[0];
+        b.addEventListener("click", function () { printDocs(r, def[1]); });
+        tdLink.appendChild(b);
+      });
+      tr.appendChild(tdLink);
 
       rosterBody.appendChild(tr);
     });
   }
 
-  // 수강생 삭제 - 해당 수강생의 모든 회차 기록도 함께 지워지므로 반드시 확인을 받는다.
-  function deleteStudentRow(studentId, name) {
-    var ok = window.confirm('"' + name + '" 수강생을 삭제할까요?\n등록된 모든 회차 기록도 함께 삭제되며, 되돌릴 수 없습니다.');
-    if (!ok) return;
-    setStatus("삭제 중…");
-    callApi("deleteStudent", { studentId: studentId })
-      .then(function () {
-        setStatus("삭제됨 · " + nowLabel());
+  var METHODS = ["현금", "카드", "계좌이체"];
 
-        // 방금 삭제한 학생이 회차별 평가 탭에서 선택되어 있었다면 선택을 초기화한다.
-        if (currentStudentId === studentId) {
-          currentStudentId = null;
-          try { localStorage.removeItem(LAST_STUDENT_KEY); } catch (e) {}
-        }
+  // 모든 수강생의 납입 내역을 한 줄로 펼친 목록 (수강료 현황/합계 계산용)
+  function allPayments() {
+    var list = [];
+    rosterAllRows.forEach(function (r) {
+      (r.payments || []).forEach(function (p) {
+        list.push({ id: p.id, studentId: r.id, name: r.name, date: p.date || "", amount: Number(p.amount) || 0, method: p.method || "", memo: p.memo || "" });
+      });
+    });
+    return list;
+  }
 
-        refreshRoster();
-        return callApi("getStudents").then(function (students) {
-          allStudentsForSelect = students;
-          studentSearchEl.value = "";
-          chartStudentSearchEl.value = "";
-          populateStudentSelect(true);
-        });
-      })
+  function sumByMethod(list) {
+    var by = { "현금": 0, "카드": 0, "계좌이체": 0, "미지정": 0 };
+    list.forEach(function (p) { by[METHODS.indexOf(p.method) !== -1 ? p.method : "미지정"] += p.amount; });
+    return by;
+  }
+
+  function statusBadgeHtml(r) {
+    var cls = r.status === "완불" ? "st-paid" : (r.status === "분납중" ? "st-part" : (r.status === "미납" ? "st-none" : "st-etc"));
+    return '<span class="pay-badge ' + cls + '">' + r.status + '</span>';
+  }
+
+  // 수강생 관리 탭 위쪽 합계: 전체 입금 / 이번 달 / 미수금(잔금) / 결제방법별
+  function updatePaymentSummary() {
+    var el = document.getElementById("paySummary");
+    if (!el) return;
+    var pays = allPayments();
+    var total = 0, month = 0, owed = 0, owedCount = 0;
+    var thisMonth = todayStr().slice(0, 7);
+    pays.forEach(function (p) {
+      total += p.amount;
+      if (p.date.slice(0, 7) === thisMonth) month += p.amount;
+    });
+    rosterAllRows.forEach(function (r) {
+      if (r.balance > 0) { owed += r.balance; owedCount++; }
+    });
+    var by = sumByMethod(pays);
+    var chips = [
+      '<span class="pay-chip pay-total">입금 합계 <b>' + formatWon(total) + '</b> <small>(' + pays.length + '건)</small></span>',
+      '<span class="pay-chip">이번 달 <b>' + formatWon(month) + '</b></span>',
+      '<span class="pay-chip pay-owed">미수금(잔금) <b>' + formatWon(owed) + '</b> <small>(' + owedCount + '명)</small></span>',
+      '<span class="pay-chip">현금 <b>' + formatWon(by["현금"]) + '</b></span>',
+      '<span class="pay-chip">카드 <b>' + formatWon(by["카드"]) + '</b></span>',
+      '<span class="pay-chip">계좌이체 <b>' + formatWon(by["계좌이체"]) + '</b></span>'
+    ];
+    if (by["미지정"]) chips.push('<span class="pay-chip">결제방법 미지정 <b>' + formatWon(by["미지정"]) + '</b></span>');
+    el.innerHTML = chips.join("");
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 탭 4: 수강료 현황 (주간 / 월간)                                       */
+  /* 수강료는 수강생의 "등록일" 기준으로 해당 기간에 집계한다.                  */
+  /* ---------------------------------------------------------------- */
+
+  var payMode = "week";           // "week" | "month"
+  var payAnchor = new Date();     // 보고 있는 기간 안의 아무 날짜
+  var payBodyEl = document.getElementById("payBody");
+  var payFootEl = document.getElementById("payFoot");
+  var payDateEl = document.getElementById("payDate");
+  var payPeriodLabelEl = document.getElementById("payPeriodLabel");
+  var payRangeSummaryEl = document.getElementById("payRangeSummary");
+  var payTodayBtn = document.getElementById("payToday");
+
+  function ymdOf(d) {
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function parseYmd(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || "");
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+
+  // "9/28(월)" 형태로 짧게 표시 (모바일에서 표가 옆으로 길어지지 않도록)
+  function shortDate(s) {
+    var d = parseYmd(s);
+    return d ? (d.getMonth() + 1) + "/" + d.getDate() + "(" + "일월화수목금토".charAt(d.getDay()) + ")" : "";
+  }
+
+  // 주간은 월요일 ~ 일요일, 월간은 1일 ~ 말일
+  function payRange() {
+    var d = payAnchor;
+    if (payMode === "week") {
+      var start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+      var end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+      return { start: start, end: end };
+    }
+    return { start: new Date(d.getFullYear(), d.getMonth(), 1), end: new Date(d.getFullYear(), d.getMonth() + 1, 0) };
+  }
+
+  // 기간(주간/월간) 안에 "돈을 받은 날(납입일)"이 있는 납입 내역을 모아 보여준다.
+  function renderPayments() {
+    if (!payBodyEl) return;
+    var range = payRange();
+    var startKey = ymdOf(range.start), endKey = ymdOf(range.end);
+
+    payDateEl.type = payMode === "week" ? "date" : "month";
+    payDateEl.value = payMode === "week" ? ymdOf(payAnchor) : startKey.slice(0, 7);
+    payTodayBtn.textContent = payMode === "week" ? "이번 주" : "이번 달";
+    payPeriodLabelEl.textContent = payMode === "week"
+      ? (range.start.getFullYear() + "년 " + (range.start.getMonth() + 1) + "월 " + range.start.getDate() + "일 ~ "
+         + (range.end.getMonth() + 1) + "월 " + range.end.getDate() + "일")
+      : (range.start.getFullYear() + "년 " + (range.start.getMonth() + 1) + "월");
+
+    var pays = allPayments().filter(function (p) {
+      var k = p.date.slice(0, 10);
+      return k >= startKey && k <= endKey;
+    }).sort(function (x, y) {
+      return x.date.localeCompare(y.date) || x.name.localeCompare(y.name, "ko");
+    });
+
+    var total = 0, people = {};
+    payBodyEl.innerHTML = "";
+    if (!pays.length) {
+      payBodyEl.innerHTML = '<tr><td colspan="4" class="empty-row">이 기간에 납입된 수강료가 없어요.</td></tr>';
+    }
+    pays.forEach(function (p) {
+      total += p.amount;
+      people[p.studentId] = true;
+      var tr = document.createElement("tr");
+
+      var tdDate = document.createElement("td");
+      tdDate.textContent = shortDate(p.date);
+      tr.appendChild(tdDate);
+
+      var tdName = document.createElement("td");
+      tdName.textContent = p.name;
+      if (p.memo) {
+        var sm = document.createElement("small");
+        sm.className = "pay-memo";
+        sm.textContent = p.memo;
+        tdName.appendChild(sm);
+      }
+      tr.appendChild(tdName);
+
+      var tdMethod = document.createElement("td");
+      tdMethod.textContent = p.method || "-";
+      tr.appendChild(tdMethod);
+
+      var tdAmt = document.createElement("td");
+      tdAmt.className = "pay-amount";
+      tdAmt.textContent = formatWon(p.amount);
+      tr.appendChild(tdAmt);
+
+      payBodyEl.appendChild(tr);
+    });
+
+    var peopleCount = Object.keys(people).length;
+    payFootEl.innerHTML = pays.length
+      ? '<tr class="pay-total-row"><td colspan="3">합계 (' + pays.length + '건 · ' + peopleCount + '명)</td><td class="pay-amount">' + formatWon(total) + '</td></tr>'
+      : "";
+
+    var by = sumByMethod(pays);
+    var chips = [
+      '<span class="pay-chip pay-total">' + (payMode === "week" ? "주간" : "월간") + ' 수강료 합계 <b>' + formatWon(total) + '</b> <small>(' + pays.length + '건 · ' + peopleCount + '명)</small></span>',
+      '<span class="pay-chip">현금 <b>' + formatWon(by["현금"]) + '</b></span>',
+      '<span class="pay-chip">카드 <b>' + formatWon(by["카드"]) + '</b></span>',
+      '<span class="pay-chip">계좌이체 <b>' + formatWon(by["계좌이체"]) + '</b></span>'
+    ];
+    if (by["미지정"]) chips.push('<span class="pay-chip">결제방법 미지정 <b>' + formatWon(by["미지정"]) + '</b></span>');
+    payRangeSummaryEl.innerHTML = chips.join("");
+  }
+
+  function payShift(dir) {
+    var d = payAnchor;
+    payAnchor = payMode === "week"
+      ? new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7 * dir)
+      : new Date(d.getFullYear(), d.getMonth() + dir, 1);
+    renderPayments();
+  }
+  document.getElementById("payPrev").addEventListener("click", function () { payShift(-1); });
+  document.getElementById("payNext").addEventListener("click", function () { payShift(1); });
+  payTodayBtn.addEventListener("click", function () { payAnchor = new Date(); renderPayments(); });
+  payDateEl.addEventListener("change", function () {
+    var v = payDateEl.value;
+    if (!v) return;
+    payAnchor = payMode === "week" ? parseYmd(v) : parseYmd(v + "-01");
+    if (payAnchor) renderPayments();
+  });
+  Array.prototype.slice.call(document.querySelectorAll(".pay-mode-btn")).forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      payMode = btn.dataset.mode;
+      Array.prototype.slice.call(document.querySelectorAll(".pay-mode-btn")).forEach(function (b) {
+        b.classList.toggle("is-active", b === btn);
+      });
+      renderPayments();
+    });
+  });
+
+  function formatWon(n) {
+    return (Number(n) || 0).toLocaleString("ko-KR") + "원";
+  }
+
+  function moneyVal(el) {
+    return Number(String(el.value).replace(/[^\d]/g, "")) || 0;
+  }
+  function bindMoneyInput(el) {
+    el.addEventListener("input", function () {
+      var d = el.value.replace(/[^\d]/g, "");
+      el.value = d ? Number(d).toLocaleString("ko-KR") : "";
+    });
+  }
+
+  // 총 수강료 칸: 클릭하면 숫자만 보이고, 입력이 끝나면 저장한 뒤 "280,000원" 형태로 보여준다.
+  function makeFeeCell(r) {
+    var td = document.createElement("td");
+    var input = document.createElement("input");
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.className = "cell-input cell-amount";
+    input.placeholder = "총액";
+    input.value = r.totalFee ? formatWon(r.totalFee) : "";
+    input.addEventListener("focus", function () { input.value = r.totalFee ? String(r.totalFee) : ""; });
+    input.addEventListener("change", function () {
+      var fee = moneyVal(input);
+      callApi("updateStudentInfo", { studentId: r.id, patch: { totalFee: fee } })
+        .then(function (rows) {
+          rosterAllRows = rows;
+          setStatus("저장됨 · " + nowLabel());
+          applyRosterView();
+        })
+        .catch(onError);
+    });
+    input.addEventListener("blur", function () {
+      var fee = moneyVal(input);
+      input.value = fee ? formatWon(fee) : "";
+    });
+    td.appendChild(input);
+    return td;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 납입 관리 팝업 (분납: 계약금 / 중도금 / 잔금, 완불 체크)                  */
+  /* ---------------------------------------------------------------- */
+
+  var payDialog = document.getElementById("payDialog");
+  var pdTitle = document.getElementById("pdTitle");
+  var pdFee = document.getElementById("pdFee");
+  var pdStatus = document.getElementById("pdStatus");
+  var pdSums = document.getElementById("pdSums");
+  var pdBody = document.getElementById("pdBody");
+  var pdDate = document.getElementById("pdDate");
+  var pdAmount = document.getElementById("pdAmount");
+  var pdMethod = document.getElementById("pdMethod");
+  var pdMemo = document.getElementById("pdMemo");
+  var pdPaidOff = document.getElementById("pdPaidOff");
+  var pdSave = document.getElementById("pdSave");
+  var pdUnpaid = document.getElementById("pdUnpaid");
+  var pdStudentId = null;
+
+  function pdStudent() {
+    for (var i = 0; i < rosterAllRows.length; i++) {
+      if (rosterAllRows[i].id === pdStudentId) return rosterAllRows[i];
+    }
+    return null;
+  }
+
+  function openPayDialog(studentId) {
+    pdStudentId = studentId;
+    pdDate.value = todayStr();
+    pdAmount.value = "";
+    pdMemo.value = "";
+    pdPaidOff.checked = false;
+    renderPayDialog();
+    if (payDialog.showModal) payDialog.showModal(); else payDialog.setAttribute("open", "");
+  }
+
+  function renderPayDialog() {
+    var r = pdStudent();
+    if (!r) { if (payDialog.close) payDialog.close(); return; }
+    pdTitle.textContent = r.name + " · 수강료 납입";
+    pdFee.value = r.totalFee ? formatWon(r.totalFee) : "";
+    pdStatus.className = "pay-badge " + (r.status === "완불" ? "st-paid" : (r.status === "분납중" ? "st-part" : (r.status === "미납" ? "st-none" : "st-etc")));
+    pdStatus.textContent = r.status;
+    pdSums.innerHTML =
+      '<span>납입 합계 <b>' + formatWon(r.paidTotal) + '</b></span>' +
+      '<span>잔금 <b>' + (r.status === "완불" ? "0원 (완불)" : (r.totalFee ? formatWon(r.balance) : "총 수강료 입력 필요")) + '</b></span>';
+    pdUnpaid.hidden = !r.paidOffManual;
+
+    pdBody.innerHTML = "";
+    if (!(r.payments || []).length) {
+      pdBody.innerHTML = '<tr><td colspan="5" class="empty-row">아직 납입 내역이 없어요.</td></tr>';
+    }
+    (r.payments || []).forEach(function (p) {
+      var tr = document.createElement("tr");
+      [shortDate(p.date), p.memo || "-", p.method || "-", formatWon(p.amount)].forEach(function (text, i) {
+        var td = document.createElement("td");
+        td.textContent = text;
+        if (i === 3) td.className = "pay-amount";
+        tr.appendChild(td);
+      });
+      var tdDel = document.createElement("td");
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "pd-del";
+      del.textContent = "삭제";
+      del.addEventListener("click", function () {
+        if (!confirm(shortDate(p.date) + " " + formatWon(p.amount) + " 납입 내역을 삭제할까요?")) return;
+        callApi("deletePayment", { paymentId: p.id })
+          .then(function (rows) {
+            rosterAllRows = rows;
+            setStatus("삭제됨 · " + nowLabel());
+            applyRosterView();
+            renderPayDialog();
+          })
+          .catch(onError);
+      });
+      tdDel.appendChild(del);
+      tr.appendChild(tdDel);
+      pdBody.appendChild(tr);
+    });
+  }
+
+  function pdApply(rows, msg) {
+    rosterAllRows = rows;
+    setStatus(msg + " · " + nowLabel());
+    applyRosterView();
+    renderPayDialog();
+  }
+
+  bindMoneyInput(pdAmount);
+  bindMoneyInput(pdFee);
+  pdFee.addEventListener("focus", function () { var r = pdStudent(); pdFee.value = r && r.totalFee ? String(r.totalFee) : ""; });
+  pdFee.addEventListener("change", function () {
+    var fee = moneyVal(pdFee);
+    callApi("updateStudentInfo", { studentId: pdStudentId, patch: { totalFee: fee } })
+      .then(function (rows) { pdApply(rows, "저장됨"); })
       .catch(onError);
+  });
+  pdFee.addEventListener("blur", function () { var r = pdStudent(); if (r) pdFee.value = r.totalFee ? formatWon(r.totalFee) : ""; });
+
+  // 완불 체크 시: 남은 잔금을 금액 칸에 자동으로 채워 준다.
+  pdPaidOff.addEventListener("change", function () {
+    var r = pdStudent();
+    if (pdPaidOff.checked && r && r.balance > 0 && !pdAmount.value) {
+      pdAmount.value = Number(r.balance).toLocaleString("ko-KR");
+    }
+  });
+
+  pdSave.addEventListener("click", function () {
+    var r = pdStudent();
+    if (!r) return;
+    var amount = moneyVal(pdAmount);
+    var markPaidOff = pdPaidOff.checked;
+    if (amount <= 0 && !markPaidOff) { pdAmount.focus(); setStatus("납입 금액을 입력해 주세요.", true); return; }
+    var memo = pdMemo.value.trim();
+    if (!memo && amount > 0) {
+      var n = (r.payments || []).length;
+      var closesOut = markPaidOff || (r.totalFee > 0 && amount >= r.balance);
+      memo = n === 0 ? (closesOut ? "전액" : "계약금") : (closesOut ? "잔금" : (n + 1) + "차");
+    }
+    pdSave.disabled = true;
+    callApi("addPayment", {
+      studentId: r.id, date: pdDate.value || todayStr(), amount: amount,
+      method: pdMethod.value, memo: memo, markPaidOff: markPaidOff
+    })
+      .then(function (rows) {
+        pdSave.disabled = false;
+        pdAmount.value = "";
+        pdMemo.value = "";
+        pdPaidOff.checked = false;
+        pdApply(rows, "납입 저장됨");
+      })
+      .catch(function (err) { pdSave.disabled = false; onError(err); });
+  });
+
+  pdUnpaid.addEventListener("click", function () {
+    callApi("updateStudentInfo", { studentId: pdStudentId, patch: { paidOff: false } })
+      .then(function (rows) { pdApply(rows, "완불 취소됨"); })
+      .catch(onError);
+  });
+  document.getElementById("pdClose").addEventListener("click", function () { payDialog.close(); });
+
+  /* ---------------------------------------------------------------- */
+  /* 수강 신청서 출력 (A4)                                                */
+  /* ---------------------------------------------------------------- */
+
+  function escHtml(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (ch) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch];
+    });
+  }
+
+  function dateKor(ymd) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd || "");
+    return m ? m[1] + "년 " + Number(m[2]) + "월 " + Number(m[3]) + "일" : "";
+  }
+
+  // 교습 만료일 = 등록일로부터 2개월 (등록일 포함, 예: 9/28 등록 -> 11/27 까지)
+  function endDateOf(ymd) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd || "");
+    if (!m) return "";
+    var first = new Date(+m[1], +m[2] - 1 + 2, 1);
+    var lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    var end = new Date(first.getFullYear(), first.getMonth(), Math.min(+m[3], lastDay));
+    end.setDate(end.getDate() - 1);
+    return end.getFullYear() + "-" + String(end.getMonth() + 1).padStart(2, "0") + "-" + String(end.getDate()).padStart(2, "0");
+  }
+
+  // 대표 서명 이미지 (수강 확인서 하단에 들어감)
+  var SIGN_IMG = "data:image/png;base64,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";
+
+  function box(on) { return on ? "[ ✓ ]" : "[&nbsp;&nbsp;&nbsp;]"; }
+
+  function usedMethods(s) {
+    var o = {};
+    (s.payments || []).forEach(function (p) { if (p.method) o[p.method] = true; });
+    return o;
+  }
+  // 총 수강료가 있으면 그 금액, 없으면 지금까지 낸 금액
+  function feeOf(s) {
+    return Number(s.totalFee) || Number(s.paidTotal) || 0;
+  }
+  // 분납 내역 한 줄: "9/28(월) 계약금 100,000원 / 10/20(화) 잔금 180,000원"
+  function installmentLineHtml(s) {
+    var list = s.payments || [];
+    if (!list.length) return "";
+    var parts = list.map(function (p) {
+      return escHtml(shortDate(p.date)) + " " + escHtml(p.memo || "") + " " + escHtml(Number(p.amount).toLocaleString("ko-KR")) + "원";
+    });
+    return '<p>납입 내역: ' + parts.join(" / ") + (s.balance > 0 ? ' <b>(잔금 ' + escHtml(Number(s.balance).toLocaleString("ko-KR")) + '원)</b>' : '') + '</p>';
+  }
+
+  // ① 실내운전교습 등록 신청서
+  function buildApplicationHtml(s) {
+    var used = usedMethods(s);
+    var fee = feeOf(s);
+    return ''
+      + '<div class="form-page app-form">'
+      + '<h1>실내운전교습 등록 신청서</h1>'
+      + '<h2>[교습생 정보]</h2>'
+      + '<div class="info-grid">'
+      + '<p>성 명: ' + escHtml(s.name) + '</p>'
+      + '<p>연락처: ' + escHtml(s.contact) + '</p>'
+      + '<p>생년월일: </p>'
+      + '<p>등록일자: ' + escHtml(dateKor(s.registeredDate)) + '</p>'
+      + '<p class="span2">교습 만료일: ' + escHtml(dateKor(endDateOf(s.registeredDate))) + ' (등록일로부터 2개월)</p>'
+      + '</div>'
+      + '<h2>[수강 약관]</h2>'
+      + '<div class="terms-cols">'
+      + '<p class="art">제1조 (교습 기간 및 조건)</p>'
+      + '<p>1.본 등록의 교습 기간은 등록일로부터 2개월이며, 교습소 영업일 기준 1일 최대 2시간 이용할 수 있습니다.</p>'
+      + '<p>2.교습 만료일 이전이라도 수강생이 운전면허 자격증을 취득한 경우 교습 효력은 자동 종료됩니다.</p>'
+      + '<p>3.개인의 운전 능력 차이, 연습량 또는 의지 부족 등으로 기간 내 면허를 취득하지 못한 경우 이는 수강생 본인의 귀책사유이며, 이에 따른 교습비 환불 및 이의제기는 불가합니다.</p>'
+      + '<p class="art">제2조 (권리 양도 금지)</p>'
+      + '<p>- 본 수강 권리는 제3자에게 양도, 대여, 매매할 수 없습니다.</p>'
+      + '<p class="art">제3조 (교습소 수칙 및 원칙)</p>'
+      + '<p>1.[음주·흡연 금지] 음주 후 연습은 금지되며 위반 시 즉시 중단됩니다. 음주 연습 재발 및 실내 흡연 수칙 위반 시 즉시 등록 취소(퇴정) 조치되며 환불되지 않습니다.</p>'
+      + '<p>2.[면학 분위기 조성] 교습소 내 타인과의 다툼, 시비, 소란 행위 시 강제 퇴장 조치될 수 있습니다.</p>'
+      + '<p class="art">제4조 (교습비 및 무상 서비스 특약)</p>'
+      + '<p>1.본 교습비는 실내 시뮬레이터 시설 이용 및 교육에 대한 비용입니다. 수강생의 요청으로 지원되는 실차 연습은 교습비에 포함되지 않은 \'순수 무상 선택 서비스\'입니다.</p>'
+      + '<p>2.실차 연습 이용 여부와 관계없이 교습비는 동일하게 유지되며, 이에 대한 추가 금전 대가는 요구되지 않습니다.</p>'
+      + '<p class="art">제5조 (환불 규정)</p>'
+      + '<p>1.[접수 후 24시간 이내] 수강 철회 및 환불 신청 시 납부한 교습비 전액을 환불합니다.</p>'
+      + '<p>2.[교습소 귀책사유] 교습소의 객관적·중대한 과실로 정상 교습이 불가능한 경우 잔여 기간을 일할 계산하여 환불합니다.</p>'
+      + '<p>3.접수 24시간 경과 후의 단순 변심, 제1조 제3항(기간 내 미취득), 제3조(수칙 위반)에 따른 등록 취소는 환불이 불가합니다.</p>'
+      + '</div>'
+      + '<div class="keep">'
+      + '<h2>[중요 약관 필수 동의]</h2>'
+      + '<p>1.[&nbsp;&nbsp;&nbsp;] 동의함 — (이용 조건 및 미취득 귀책 동의) 영업일 기준 1일 최대 2시간 이용 규칙을 숙지하였으며, 2개월 내 면허 미취득 시 수강생 귀책사유임에 동의합니다.</p>'
+      + '<p>2.[&nbsp;&nbsp;&nbsp;] 동의함 — (무상 서비스 동의) 실차 연습은 교습비와 무관한 순수 무상 선택 서비스임을 확인하고 동의합니다.</p>'
+      + '<p>3.[&nbsp;&nbsp;&nbsp;] 동의함 — (안전 및 퇴정 수칙 동의) 음주·실내 흡연 금지 및 소란 행위 시 등록 취소(환불 불가) 규정에 동의합니다.</p>'
+      + '</div>'
+      + '<div class="keep">'
+      + '<h2>[결제 및 영수 확인]</h2>'
+      + '<p>총 교습비: ' + (fee ? '<b>' + escHtml(Number(fee).toLocaleString("ko-KR")) + '</b>' : '___________________') + ' 원</p>'
+      + '<p>결제 수단: ' + box(used["카드"]) + ' 카드 &nbsp;/&nbsp; ' + box(used["계좌이체"]) + ' 계좌이체 &nbsp;/&nbsp; ' + box(used["현금"]) + ' 현금 &nbsp;/&nbsp; ' + box(false) + ' 기타 (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</p>'
+      + installmentLineHtml(s)
+      + '<p class="gap">위 교습비를 정식 영수하였으며, 본인은 위 수강 약관을 충분히 숙지하고 동의하여 실내운전교습 등록을 신청합니다.</p>'
+      + '<p class="center gap">' + escHtml(dateKor(s.registeredDate)) + '</p>'
+      + '<p class="gap">신청인(수강생): ' + escHtml(s.name) + ' ___________________ (인/서명)</p>'
+      + '<p>교습소명: 차샘 운전교실</p>'
+      + '<p>대표자: 이석재 (인/서명)</p>'
+      + '</div>'
+      + '</div>';
+  }
+
+  // ② 실내 운전 수강 확인서
+  function buildCertificateHtml(s) {
+    var period = dateKor(s.registeredDate) + "~" + dateKor(endDateOf(s.registeredDate));
+    return ''
+      + '<div class="form-page cert-form">'
+      + '<h1>실내 운전 수강 확인서</h1>'
+      + '<table class="cert-table cert-top"><tr><th>수강생 성함</th><td>' + escHtml(s.name) + '</td><th>수강생 연락처</th><td>' + escHtml(s.contact) + '</td></tr></table>'
+      + '<table class="cert-table cert-main">'
+      + '<tr><th>발급처</th><td><b><u>차샘 운전교실</u></b></td></tr>'
+      + '<tr><th>과정명</th><td>운전면허 취득</td></tr>'
+      + '<tr><th>수업내용</th><td>실내 시뮬레이션 연습</td></tr>'
+      + '<tr><th>수강기간</th><td>' + escHtml(period) + '</td></tr>'
+      + '<tr><th>교육비 결제금액</th><td>' + (feeOf(s) ? escHtml(Number(feeOf(s)).toLocaleString("ko-KR")) : '') + ' 원'
+      + (s.balance > 0 ? '<br><small>(납입 ' + escHtml(Number(s.paidTotal).toLocaleString("ko-KR")) + '원 · 잔금 ' + escHtml(Number(s.balance).toLocaleString("ko-KR")) + '원)</small>' : '')
+      + '</td></tr>'
+      + '</table>'
+      + '<div class="cert-terms">'
+      + '<p class="art">[수강 약관]</p>'
+      + '<p>(교습 기간 및 조건)</p>'
+      + '<p>1.본 등록의 교습 기간은 등록일로부터 2개월이며, 교습소 영업일 기준 1일 최대 2시간 이용할 수 있습니다.</p>'
+      + '<p>2.교습 만료일 이전이라도 수강생이 운전면허 자격증을 취득한 경우 교습 효력은 자동 종료됩니다.</p>'
+      + '<p>3.개인의 운전 능력 차이, 연습량 또는 의지 부족 등으로 기간 내 면허를 취득하지 못한 경우 이는 수강생 본인의 귀책 사유이며, 이에 따른 교습비 환불 및 이의제기는 불가합니다.</p>'
+      + '<p class="gap">(교습소 수칙 및 원칙)</p>'
+      + '<p>1.[음주·흡연 금지] 음주 후 연습은 금지되며 위반 시 즉시 중단됩니다. 음주 연습 재발 및 실내 흡연 수칙 위반 시 즉시 등록 취소(퇴정) 조치되며 환불되지 않습니다.</p>'
+      + '<p>2.[면학 분위기 조성] 교습소 내 타인과의 다툼, 시비, 소란 행위 시 강제 퇴장 조치될 수 있습니다.</p>'
+      + '</div>'
+      + '<p class="cert-date">' + escHtml(dateKor(s.registeredDate)) + '</p>'
+      + '<p class="cert-sign">대표: 이 석 재 <img src="' + SIGN_IMG + '" alt=""></p>'
+      + '</div>';
+  }
+
+  // ③ 수강생에게 주는 실력 리포트: 최근점수 / 이전점수 / 향상도 / 현재레벨 / 강사메모만 담는다.
+  function buildReportHtml(s) {
+    var recent = s.recentScore == null ? "-" : s.recentScore + "점";
+    var prev = s.prevScore == null ? "-" : s.prevScore + "점";
+    var delta, deltaCls = "flat";
+    if (s.sessionCount >= 2 && s.delta != null) {
+      if (s.delta > 0) { delta = "▲ +" + s.delta + "점"; deltaCls = "up"; }
+      else if (s.delta < 0) { delta = "▼ " + s.delta + "점"; deltaCls = "down"; }
+      else delta = "변화 없음";
+    } else {
+      delta = "첫 평가";
+    }
+    var memo = String(s.memo || "").trim();
+    return ''
+      + '<div class="form-page report-form">'
+      + '<div class="rp-brand">차샘 운전교실</div>'
+      + '<h1>실력 향상 리포트</h1>'
+      + '<p class="rp-meta"><b>' + escHtml(s.name) + '</b> 수강생 &nbsp;·&nbsp; ' + escHtml(dateKor(todayStr())) + '</p>'
+      + '<table class="rp-table"><tr>'
+      + '<th>최근 점수</th><th>이전 점수</th><th>향상도</th><th>현재 레벨</th></tr><tr>'
+      + '<td>' + escHtml(recent) + '</td><td>' + escHtml(prev) + '</td>'
+      + '<td class="rp-' + deltaCls + '">' + escHtml(delta) + '</td><td>' + escHtml(s.level || "-") + '</td>'
+      + '</tr></table>'
+      + '<div class="rp-memo"><div class="rp-memo-title">강사 메모</div>'
+      + '<div class="rp-memo-body ' + (memo.length > 2400 ? "m4" : memo.length > 1500 ? "m3" : memo.length > 900 ? "m2" : memo.length > 500 ? "m1" : "") + '">' + (memo ? escHtml(memo).replace(/\n/g, "<br>") : "&nbsp;") + '</div></div>'
+      + '</div>';
+  }
+
+  // which = { application, certificate, report } - 선택한 서류를 한 번에 인쇄한다.
+  function printDocs(student, which) {
+    var html = "";
+    if (which.report) html += buildReportHtml(student);
+    if (which.application) html += buildApplicationHtml(student);
+    if (which.certificate) html += buildCertificateHtml(student);
+    if (!html) return;
+    printAreaEl.innerHTML = html;
+    var imgs = Array.prototype.slice.call(printAreaEl.querySelectorAll("img"));
+    Promise.all(imgs.map(function (im) {
+      return im.decode ? im.decode().catch(function () {}) : Promise.resolve();
+    })).then(function () { setTimeout(function () { window.print(); }, 50); });
   }
 
   function makeEditableCell(studentId, field, value, type, placeholder, isMemo) {
@@ -340,6 +881,9 @@
       }
       var patch = {};
       patch[field] = input.value;
+      for (var li = 0; li < rosterAllRows.length; li++) {
+        if (rosterAllRows[li].id === studentId) { rosterAllRows[li][field] = input.value; break; }
+      }
       callApi("updateStudentInfo", { studentId: studentId, patch: patch })
         .then(function () {
           setStatus("저장됨 · " + nowLabel());
@@ -356,14 +900,31 @@
     if (!name) { newStudentName.focus(); return; }
     addStudentBtn.disabled = true;
     setStatus("수강생 등록 중…");
-    callApi("addStudent", { name: name, contact: newStudentContact.value.trim(), registeredDate: newStudentDate.value, endDate: newStudentEndDate.value })
+    var fee = moneyVal(newStudentFee);
+    var amount = moneyVal(newStudentAmount);
+    var paidOff = newStudentPaidOff.checked;
+    if (paidOff && !amount && fee) amount = fee; // 완불인데 금액을 안 적었으면 총 수강료 전액으로
+    callApi("addStudent", {
+      name: name,
+      contact: newStudentContact.value.trim(),
+      registeredDate: newStudentDate.value,
+      totalFee: fee,
+      paymentAmount: amount,
+      paymentMethod: newStudentMethod.value,
+      paidOff: paidOff
+    })
       .then(function (newStudent) {
         addStudentBtn.disabled = false;
         newStudentName.value = "";
         newStudentContact.value = "";
+        newStudentFee.value = "";
+        newStudentAmount.value = "";
+        newStudentPaidOff.checked = false;
         newStudentDate.value = todayStr();
-        newStudentEndDate.value = "";
         setStatus("등록됨 · " + nowLabel());
+        if (printAppOnAdd.checked || printCertOnAdd.checked) {
+          printDocs(newStudent, { application: printAppOnAdd.checked, certificate: printCertOnAdd.checked });
+        }
 
         // 등록한 수강생이 검색/페이지에 가려 안 보이는 일이 없도록 명단 보기를 초기화한다.
         rosterSearchEl.value = "";
@@ -384,6 +945,15 @@
       .catch(function (err) { addStudentBtn.disabled = false; onError(err); });
   });
   newStudentName.addEventListener("keydown", function (e) { if (e.key === "Enter") addStudentBtn.click(); });
+  bindMoneyInput(newStudentFee);
+  bindMoneyInput(newStudentAmount);
+  // 완불을 체크하면 오늘 받은 금액 칸에 총 수강료를 자동으로 채워 준다.
+  newStudentPaidOff.addEventListener("change", function () {
+    var fee = moneyVal(newStudentFee);
+    if (newStudentPaidOff.checked && fee && !newStudentAmount.value) {
+      newStudentAmount.value = fee.toLocaleString("ko-KR");
+    }
+  });
 
   /* ---------------------------------------------------------------- */
   /* 탭 2: 회차별 평가                                                   */
@@ -456,31 +1026,13 @@
     loadStudent(target);
   }
 
-  var searchTimer = null;
-function makeStudentSearchHandler(searchEl) {
-  return function () {
-    populateStudentSelect(false);
-    if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(function () {
-      if (!searchEl.value.trim()) return;
-      var list = filterStudents(searchEl.value);
-      if (!list.length) return;
-      var firstId = list[0].id;
-      if (firstId === currentStudentId) return;
-      studentSelect.value = firstId;
-      chartStudentSelectEl.value = firstId;
-      loadStudent(firstId);
-    }, 400);
-  };
-}
-studentSearchEl.addEventListener("input", makeStudentSearchHandler(studentSearchEl));
-chartStudentSearchEl.addEventListener("input", makeStudentSearchHandler(chartStudentSearchEl));
+  studentSearchEl.addEventListener("input", function () { populateStudentSelect(false); });
   studentSelect.addEventListener("change", function () {
     chartStudentSelectEl.value = studentSelect.value;
     loadStudent(studentSelect.value);
   });
 
-  
+  chartStudentSearchEl.addEventListener("input", function () { populateStudentSelect(false); });
   chartStudentSelectEl.addEventListener("change", function () {
     studentSelect.value = chartStudentSelectEl.value;
     loadStudent(chartStudentSelectEl.value);
@@ -598,8 +1150,22 @@ chartStudentSearchEl.addEventListener("input", makeStudentSearchHandler(chartStu
   var focusMemoStatusEl = document.getElementById("focusMemoStatus");
   var focusMemoTimer = null;
 
+  // 선택한 수강생의 성적표 출력
+  document.getElementById("reportPrintBtn").addEventListener("click", function () {
+    var row = null;
+    for (var i = 0; i < rosterAllRows.length; i++) {
+      if (rosterAllRows[i].id === currentStudentId) { row = rosterAllRows[i]; break; }
+    }
+    if (!row) { setStatus("수강생 정보를 불러오는 중이에요. 잠시 후 다시 눌러 주세요.", true); return; }
+    printDocs(row, { report: true });
+  });
+
   focusMemoEl.addEventListener("input", function () {
     focusMemoStatusEl.textContent = "저장 중…";
+    // 저장이 끝나기 전에 성적표를 출력해도 방금 쓴 메모가 나오도록 로컬 데이터에도 바로 반영
+    for (var mi = 0; mi < rosterAllRows.length; mi++) {
+      if (rosterAllRows[mi].id === currentStudentId) { rosterAllRows[mi].memo = focusMemoEl.value; break; }
+    }
     if (focusMemoTimer) clearTimeout(focusMemoTimer);
     focusMemoTimer = setTimeout(function () {
       if (!currentStudentId) return;
@@ -1072,3 +1638,4 @@ chartStudentSearchEl.addEventListener("input", makeStudentSearchHandler(chartStu
   refreshRoster();
   refreshStudentSelect();
 })();
+  
