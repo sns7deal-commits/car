@@ -1,4 +1,4 @@
-:root{
+  :root{
     color-scheme: light;
     --page:      #f5f7fb;
     --surface:   #ffffff;
@@ -204,9 +204,11 @@
     white-space:nowrap;
   }
   .roster-table th, .history-table th{ text-align:center; }
-  .roster-table td:nth-child(4),
-  .roster-table td:nth-child(5),
-  .roster-table td:nth-child(6){ text-align:center; }
+  .roster-table td:nth-child(6),
+  .roster-table td:nth-child(7),
+  .roster-table td:nth-child(8),
+  .roster-table td:nth-child(9){ text-align:center; }
+  .roster-table td.pay-amount{ text-align:right; font-weight:700; white-space:nowrap; }
   .history-table td{ text-align:center; }
   .roster-table td, .history-table td{
     padding:8px 10px;
@@ -329,20 +331,6 @@
     white-space:nowrap;
   }
   .row-edit-btn:hover{ filter:brightness(1.05); }
-
-  .row-delete-btn{
-    font:inherit;
-    font-size:12px;
-    font-weight:700;
-    color:var(--bad);
-    background:var(--surface-2);
-    border:1px solid var(--line-strong);
-    border-radius:7px;
-    padding:5px 10px;
-    cursor:pointer;
-    white-space:nowrap;
-  }
-  .row-delete-btn:hover{ background:var(--bad); color:#fff; border-color:var(--bad); }
 
   .session-actions{
     display:flex;
@@ -875,3 +863,171 @@
 
     .usage-guide{ padding:4px 12px; }
   }
+  
+
+  /* ---- 받은 금액 / 결제방법 / 신청서 출력 ---- */
+  .add-student-row2{ margin-top:8px; align-items:center; }
+  .add-student-row select{
+    flex:0 1 110px;
+    font:inherit;
+    font-size:14px;
+    color:var(--ink);
+    background:var(--surface-2);
+    border:1px solid var(--line-strong);
+    border-radius:9px;
+    padding:8px 10px;
+  }
+  .add-student .print-check{
+    display:flex; align-items:center; gap:6px;
+    margin:0; font-size:13px; font-weight:600; color:var(--ink);
+    white-space:nowrap;
+  }
+  .add-student .print-check input{ flex:none; width:auto; }
+  .cell-amount{ min-width:110px; text-align:right; }
+  .cell-method{ min-width:70px; }
+  .roster-print{ margin-left:6px; }
+
+  /* ---- 인쇄용 서류 (등록 신청서 / 수강 확인서) ---- */
+  .print-area{ display:none; }
+  @media print{
+    @page{ size:A4; margin:14mm 16mm; }
+    html, body{ background:#fff !important; }
+    .wrap{ display:none !important; }
+    .print-area{ display:block; color:#000; font-family:"Malgun Gothic","Noto Sans KR",sans-serif; }
+    .form-page{ page-break-after:always; }
+    .form-page:last-child{ page-break-after:auto; }
+    .form-page p{ margin:0; }
+    .form-page h1{ text-align:center; color:#000; }
+    .form-page .center{ text-align:center; }
+
+    .app-form{ font-size:10.5pt; line-height:1.6; }
+    .app-form h1{ font-size:18pt; margin:0 0 5mm; }
+    .app-form h2{ font-size:11.5pt; margin:5mm 0 1.5mm; }
+    .app-form .art{ font-weight:700; margin-top:2mm; }
+    .app-form .gap{ margin-top:3.5mm; }
+    .app-form .info-grid{ display:grid; grid-template-columns:1fr 1fr; column-gap:6mm; }
+    .app-form .info-grid .span2{ grid-column:1 / -1; }
+    .app-form .terms-cols{ column-count:2; column-gap:7mm; font-size:9.3pt; line-height:1.5; }
+    .app-form .keep{ break-inside:avoid; page-break-inside:avoid; }
+
+    .cert-form{ font-size:10.5pt; line-height:1.6; }
+    .cert-form h1{ font-size:22pt; margin:8mm 0 10mm; }
+    .cert-table{ width:100%; border-collapse:collapse; margin-bottom:6mm; }
+    .cert-table th, .cert-table td{ border:1px solid #000; padding:3.5mm 3mm; text-align:center; }
+    .cert-table th{ font-weight:700; width:30mm; }
+    .cert-top th{ width:30mm; } .cert-top td{ width:auto; }
+    .cert-main th{ width:50mm; font-size:12pt; padding:5mm 3mm; }
+    .cert-terms{ margin-top:8mm; font-size:9.5pt; line-height:1.55; }
+    .cert-terms .art{ font-weight:700; }
+    .cert-terms .gap{ margin-top:3mm; }
+    .cert-date{ text-align:center; font-size:14pt; margin-top:12mm; }
+    .cert-sign{ text-align:right; font-weight:700; font-size:10pt; margin-top:10mm; }
+    .cert-sign img{ height:14mm; vertical-align:middle; margin-left:4mm; }
+
+    .report-form{ font-size:12pt; line-height:1.6; }
+    .rp-brand{ text-align:right; font-size:12pt; font-weight:700; }
+    .report-form h1{ font-size:24pt; margin:8mm 0 4mm; }
+    .rp-meta{ text-align:center; font-size:13pt; margin-bottom:10mm !important; }
+    .rp-table{ width:100%; border-collapse:collapse; table-layout:fixed; margin-bottom:10mm; }
+    .rp-table th, .rp-table td{ border:1px solid #000; text-align:center; }
+    .rp-table th{ background:#f0f0f0; font-size:11pt; padding:3mm; }
+    .rp-table td{ font-size:20pt; font-weight:800; padding:9mm 2mm; }
+    .rp-table td.rp-up{ color:#0a7d3b; }
+    .rp-table td.rp-down{ color:#b3261e; }
+    .rp-memo{ border:1px solid #000; }
+    .rp-memo-title{ background:#f0f0f0; border-bottom:1px solid #000; font-weight:700; padding:3mm 4mm; }
+    .rp-memo-body{ min-height:70mm; padding:5mm; font-size:12pt; line-height:1.7; word-break:keep-all; }
+    /* 메모가 길면 A4 한 장을 넘지 않도록 글씨를 단계적으로 줄인다 */
+    .rp-memo-body.m1{ font-size:11pt; line-height:1.6; }
+    .rp-memo-body.m2{ font-size:10pt; line-height:1.5; }
+    .rp-memo-body.m3{ font-size:8.5pt; line-height:1.45; }
+    .rp-memo-body.m4{ font-size:7pt; line-height:1.4; }
+  }
+
+  /* ---- 결제 합계 ---- */
+  .pay-summary{ display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; }
+  .pay-chip{
+    font-size:12.5px; color:var(--ink-muted);
+    background:var(--surface-2); border:1px solid var(--line-strong);
+    border-radius:9px; padding:6px 10px; white-space:nowrap;
+  }
+  .pay-chip b{ color:var(--ink); font-weight:700; margin-left:4px; }
+  .pay-chip small{ font-size:11px; }
+  .pay-total{ border-color:var(--accent); }
+  .pay-total b{ color:var(--accent); font-size:14px; }
+
+  /* ---- 수강료 현황 (주간/월간) ---- */
+  .tabs{ overflow-x:auto; }
+  .tab-btn{ white-space:nowrap; padding-left:8px; padding-right:8px; }
+  .pay-mode{ display:inline-flex; border:1px solid var(--line-strong); border-radius:9px; overflow:hidden; margin-bottom:12px; }
+  .pay-mode-btn{
+    font:inherit; font-size:13px; font-weight:700; padding:7px 18px;
+    color:var(--ink-2); background:var(--surface-2); border:none; cursor:pointer;
+  }
+  .pay-mode-btn.is-active{ background:var(--accent); color:#fff; }
+  .pay-nav{ display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .pay-nav button{
+    font:inherit; font-size:13px; font-weight:700; padding:7px 12px; cursor:pointer;
+    color:var(--ink); background:var(--surface-2); border:1px solid var(--line-strong); border-radius:9px;
+  }
+  .pay-nav input{
+    font:inherit; font-size:14px; color:var(--ink); background:var(--surface-2);
+    border:1px solid var(--line-strong); border-radius:9px; padding:7px 10px;
+  }
+  .pay-table .pay-amount{ text-align:right; font-weight:700; white-space:nowrap; }
+  .pay-table tfoot td{ font-weight:800; background:var(--surface-2); border-top:2px solid var(--line-strong); }
+  .pay-table tfoot td:first-child{ text-align:right; }
+
+  @media (max-width: 600px){
+    .tabs{ gap:2px; }
+    .tab-btn{ font-size:12.5px; padding-left:5px; padding-right:5px; }
+    .pay-table th, .pay-table td{ padding-left:6px; padding-right:6px; }
+  }
+
+  .history-table.pay-table{ min-width:0; }
+
+
+  /* ---- 분납(납입 관리) ---- */
+  .pay-badge{ display:inline-block; font-size:11.5px; font-weight:800; padding:3px 9px; border-radius:999px; white-space:nowrap; }
+  .pay-badge.st-paid{ color:var(--good); background:var(--good-soft); }
+  .pay-badge.st-part{ color:var(--warn); background:var(--warn-soft); }
+  .pay-badge.st-none{ color:var(--bad); background:var(--bad-soft); }
+  .pay-badge.st-etc{ color:var(--ink-2); background:var(--surface-2); }
+  .pay-balance{ display:block; margin-top:3px; font-size:11px; color:var(--bad); font-weight:700; white-space:nowrap; }
+  .pay-owed{ border-color:var(--bad); }
+  .pay-owed b{ color:var(--bad); }
+  .pay-memo{ display:block; font-size:11px; color:var(--ink-muted); font-weight:600; }
+  .roster-pay{ margin-right:6px; background:var(--accent); color:#fff; border-color:var(--accent); }
+
+  .pay-dialog{
+    border:1px solid var(--line-strong); border-radius:16px; padding:16px;
+    width:calc(100% - 24px); max-width:520px; max-height:calc(100% - 24px); overflow:auto;
+    background:var(--surface); color:var(--ink); box-shadow:var(--shadow);
+  }
+  .pay-dialog::backdrop{ background:rgba(10,14,22,0.55); }
+  .pd-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:16px; margin-bottom:12px; }
+  .pd-head button{ font:inherit; font-size:16px; border:none; background:transparent; color:var(--ink-2); cursor:pointer; padding:4px 8px; }
+  .pd-fee{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+  .pd-fee label{ font-weight:700; font-size:13px; }
+  .pd-fee input, .pd-add input, .pd-add select{
+    font:inherit; font-size:14px; color:var(--ink); background:var(--surface-2);
+    border:1px solid var(--line-strong); border-radius:9px; padding:8px 10px; min-width:0;
+  }
+  .pd-fee input{ flex:1 1 140px; }
+  .pd-sums{ display:flex; gap:14px; flex-wrap:wrap; font-size:13px; color:var(--ink-2); margin-bottom:10px; }
+  .pd-sums b{ color:var(--ink); }
+  .pd-table{ min-width:0 !important; }
+  .pd-table .pay-amount{ text-align:right; font-weight:700; white-space:nowrap; }
+  .pd-del{ font:inherit; font-size:12px; color:var(--bad); background:transparent; border:1px solid var(--line-strong); border-radius:7px; padding:3px 8px; cursor:pointer; }
+  .pd-add{ margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+  .pd-add-title{ font-weight:800; font-size:13px; margin-bottom:8px; }
+  .pd-row{ display:flex; gap:8px; margin-bottom:8px; }
+  .pd-row input{ flex:1 1 0; }
+  .pd-row select{ flex:0 0 auto; }
+  .pd-paidoff{ margin:2px 0 10px; }
+  .pd-actions{ display:flex; gap:8px; }
+  .pd-actions button{ font:inherit; font-size:14px; font-weight:800; padding:9px 16px; border-radius:9px; cursor:pointer; border:1px solid var(--accent); background:var(--accent); color:#fff; }
+  .pd-actions .pd-ghost{ background:transparent; color:var(--ink); border-color:var(--line-strong); }
+  .add-student-row input[type="text"]{ min-width:0; }
+
+  .field-inline .report-print-btn{ margin-left:auto; }
