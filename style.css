@@ -1038,6 +1038,7 @@
     margin:0 0 14px; padding:12px 14px; border-radius:12px; font-size:13.5px; font-weight:700; line-height:1.5;
     color:var(--bad); background:var(--bad-soft); border:1px solid var(--bad);
   }
+  .server-warn{ position:sticky; top:0; z-index:60; }
   .server-warn[hidden]{ display:none; }
   .date-field{ display:flex; align-items:center; gap:6px; flex:1 1 150px; min-width:0; margin:0; }
   .date-field span{ font-size:12px; font-weight:700; color:var(--ink-muted); white-space:nowrap; }

@@ -177,6 +177,8 @@
       .then(function (rows) {
         rosterAllRows = rows;
         applyRosterView();
+        // 서버가 납입 정보(status)를 안 보내면 서버가 옛날 버전이라는 뜻이다.
+        if (rows.length && rows[0].status === undefined) showServerWarn();
       })
       .catch(onError);
   }
@@ -344,6 +346,7 @@
   }
 
   function statusBadgeHtml(r) {
+    if (!r.status) return '<span class="pay-badge st-none">서버 업데이트 필요</span>';
     var cls = r.status === "완불" ? "st-paid" : (r.status === "분납중" ? "st-part" : (r.status === "미납" ? "st-none" : "st-etc"));
     return '<span class="pay-badge ' + cls + '">' + r.status + '</span>';
   }
@@ -1703,7 +1706,7 @@
   });
   function showServerWarn() {
     var el = document.getElementById("serverWarn");
-    el.textContent = "⚠ 서버(Apps Script)가 옛날 버전이에요. 납입 금액·마감일·삭제가 저장되지 않아요. Apps Script에 새 Code.js를 붙여넣고 '배포 → 배포 관리 → 연필 → 새 버전 → 배포'를 해 주세요.";
+    el.textContent = "⚠ 서버(Apps Script)가 옛날 버전이라 받은 금액·잔금이 저장·표시되지 않아요. Apps Script에 새 Code.js를 붙여넣고 저장한 뒤 '배포 → 배포 관리 → 연필 → 버전: 새 버전 → 배포'를 해 주세요. (새 배포를 만들면 안 돼요)";
     el.hidden = false;
   }
 })();
