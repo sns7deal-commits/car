@@ -943,6 +943,15 @@
     var amount = moneyVal(newStudentAmount);
     var paidOff = newStudentPaidOff.checked;
     if (paidOff && !amount && fee) amount = fee; // 완불인데 금액을 안 적었으면 총 수강료 전액으로
+    // 총 수강료를 비워 두고 받은 금액만 적은 경우: 전액인지 계약금인지 물어서 총 수강료 칸이 비지 않게 한다.
+    if (!fee && amount) {
+      if (paidOff) {
+        fee = amount; // 완불 체크 + 총 수강료 미입력 -> 받은 금액이 총 수강료
+      } else if (confirm("총 수강료가 비어 있어요.\n\n오늘 받은 금액 " + amount.toLocaleString("ko-KR") + "원이 수강료 전액인가요?\n\n[확인] 전액(완불)으로 등록\n[취소] 계약금으로 등록 (총 수강료는 나중에 입력)")) {
+        fee = amount;
+        paidOff = true;
+      }
+    }
     callApi("addStudent", {
       name: name,
       contact: newStudentContact.value.trim(),
