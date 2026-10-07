@@ -45,6 +45,18 @@
     <!-- ================= 탭 1: 수강생 관리 ================= -->
     <section id="tabRoster" class="tab-panel">
       <div class="panel-card">
+        <div class="blank-forms">
+          <span class="blank-title">빈 양식</span>
+          <span class="blank-item">
+            <button type="button" id="blankAppPrint">등록 신청서 인쇄</button>
+            <a class="blank-dl" href="blank_application.pdf" download="실내운전교습_등록신청서_빈양식.pdf">PDF 받기</a>
+          </span>
+          <span class="blank-item">
+            <button type="button" id="blankCertPrint">수강 확인서 인쇄</button>
+            <a class="blank-dl" href="blank_certificate.pdf" download="실내운전_수강확인서_빈양식.pdf">PDF 받기</a>
+          </span>
+        </div>
+
         <div class="add-student">
           <label>새 수강생 등록</label>
           <div class="add-student-row">
@@ -293,6 +305,32 @@
         <button type="button" id="pdUnpaid" class="pd-ghost" hidden>완불 취소</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- 서류 업로드 (등록 신청서 / 수강 확인서 파일을 PC에서 올려 수강생별로 보관) -->
+  <dialog id="docDialog" class="pay-dialog">
+    <div class="pd-head"><b id="ddTitle"></b><button type="button" id="ddClose" aria-label="닫기">✕</button></div>
+    <p class="dd-help">PC에 저장된 서류 파일(PDF, 사진, 워드 등)을 올리면 수강생별로 구글 드라이브에 보관돼요. 파일 하나당 최대 8MB예요.</p>
+
+    <div class="dd-section">
+      <div class="dd-title">등록 신청서</div>
+      <ul class="dd-list" id="ddListApplication"></ul>
+      <div class="dd-upload">
+        <input type="file" id="ddFileApplication" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.hwp,.hwpx,.xls,.xlsx">
+        <button type="button" id="ddUpApplication">업로드</button>
+      </div>
+    </div>
+
+    <div class="dd-section">
+      <div class="dd-title">수강 확인서</div>
+      <ul class="dd-list" id="ddListCertificate"></ul>
+      <div class="dd-upload">
+        <input type="file" id="ddFileCertificate" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.hwp,.hwpx,.xls,.xlsx">
+        <button type="button" id="ddUpCertificate">업로드</button>
+      </div>
+    </div>
+
+    <div class="pd-msg" id="ddMsg" role="alert" hidden></div>
   </dialog>
 
   <div id="printArea" class="print-area" aria-hidden="true"></div>

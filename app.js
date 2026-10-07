@@ -290,6 +290,13 @@
       payBtn.addEventListener("click", function () { openPayDialog(r.id); });
       tdLink.appendChild(payBtn);
 
+      var docBtn = document.createElement("button");
+      docBtn.type = "button";
+      docBtn.className = "roster-link roster-doc";
+      docBtn.textContent = "서류 업로드 (" + docKinds(r) + "/2)";
+      docBtn.addEventListener("click", function () { openDocDialog(r.id); });
+      tdLink.appendChild(docBtn);
+
       var linkBtn = document.createElement("button");
       linkBtn.type = "button";
       linkBtn.className = "roster-link";
@@ -725,7 +732,7 @@
 
   function dateKor(ymd) {
     var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd || "");
-    return m ? m[1] + "년 " + Number(m[2]) + "월 " + Number(m[3]) + "일" : "";
+    return m ? m[1] + "년 " + Number(m[2]) + "월 " + Number(m[3]) + "일" : "\u3000\u3000\u3000년\u3000\u3000월\u3000\u3000일";
   }
 
   // 교습 만료일 = 등록일로부터 2개월 (등록일 포함, 예: 9/28 등록 -> 11/27 까지)
@@ -890,10 +897,146 @@
     })).then(function () { setTimeout(function () { window.print(); }, 50); });
   }
 
+  /* ---------------------------------------------------------------- */
+  /* 서류 업로드 (등록 신청서 / 수강 확인서)  +  빈 양식 인쇄                    */
+  /* ---------------------------------------------------------------- */
+
+  var DOC_LABELS = { application: "등록 신청서", certificate: "수강 확인서" };
+  var MAX_UPLOAD = 8 * 1024 * 1024;
+  var docDialog = document.getElementById("docDialog");
+  var ddTitle = document.getElementById("ddTitle");
+  var ddMsg = document.getElementById("ddMsg");
+  var ddLists = { application: document.getElementById("ddListApplication"), certificate: document.getElementById("ddListCertificate") };
+  var ddInputs = { application: document.getElementById("ddFileApplication"), certificate: document.getElementById("ddFileCertificate") };
+  var ddButtons = { application: document.getElementById("ddUpApplication"), certificate: document.getElementById("ddUpCertificate") };
+  var ddStudentId = null;
+
+  // 두 종류(신청서/확인서) 중 몇 종류가 올라가 있는지
+  function docKinds(r) {
+    var has = {};
+    (r.documents || []).forEach(function (d) { has[d.type] = true; });
+    return Object.keys(has).length;
+  }
+
+  function ddStudent() {
+    for (var i = 0; i < rosterAllRows.length; i++) {
+      if (rosterAllRows[i].id === ddStudentId) return rosterAllRows[i];
+    }
+    return null;
+  }
+
+  function ddError(err) {
+    console.error(err);
+    var m = typeof err === "string" ? err : (err && err.message ? err.message : "업로드에 실패했어요.");
+    if (/알 수 없는 요청/.test(m)) m += " → 서버(Apps Script)가 옛날 버전이에요. 새 코드를 붙여넣고 새 버전으로 배포해 주세요.";
+    if (/DriveApp|드라이브|Drive|권한|authorization/i.test(m)) m += " → Apps Script에서 authorizeDrive 함수를 한 번 실행해 드라이브 권한을 허용해 주세요.";
+    ddMsg.textContent = m;
+    ddMsg.hidden = false;
+  }
+
+  function fmtSize(n) {
+    if (!n) return "";
+    return n >= 1048576 ? (n / 1048576).toFixed(1) + "MB" : Math.max(1, Math.round(n / 1024)) + "KB";
+  }
+
+  function openDocDialog(studentId) {
+    ddStudentId = studentId;
+    ddMsg.hidden = true;
+    Object.keys(ddInputs).forEach(function (t) { ddInputs[t].value = ""; });
+    renderDocDialog();
+    if (docDialog.showModal) docDialog.showModal(); else docDialog.setAttribute("open", "");
+  }
+
+  function renderDocDialog() {
+    var r = ddStudent();
+    if (!r) { if (docDialog.close) docDialog.close(); return; }
+    ddTitle.textContent = r.name + " · 서류 업로드";
+    Object.keys(DOC_LABELS).forEach(function (type) {
+      var ul = ddLists[type];
+      ul.innerHTML = "";
+      var docs = (r.documents || []).filter(function (d) { return d.type === type; });
+      if (!docs.length) {
+        var empty = document.createElement("li");
+        empty.className = "dd-empty";
+        empty.textContent = "아직 올린 파일이 없어요.";
+        ul.appendChild(empty);
+      }
+      docs.forEach(function (d) {
+        var li = document.createElement("li");
+        var name = document.createElement("a");
+        name.href = d.url;
+        name.target = "_blank";
+        name.rel = "noopener";
+        name.textContent = d.name;
+        li.appendChild(name);
+        var meta = document.createElement("small");
+        meta.textContent = [String(d.uploadedAt || "").slice(0, 10), fmtSize(d.size)].filter(Boolean).join(" · ");
+        li.appendChild(meta);
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "pd-del";
+        del.textContent = "삭제";
+        del.addEventListener("click", function () {
+          if (!confirm('"' + d.name + '" 파일을 삭제할까요? 드라이브 휴지통으로 이동해요.')) return;
+          callApi("deleteDocument", { docId: d.id })
+            .then(function (rows) {
+              rosterAllRows = rows;
+              ddMsg.hidden = true;
+              setStatus("삭제됨 · " + nowLabel());
+              applyRosterView();
+              renderDocDialog();
+            })
+            .catch(ddError);
+        });
+        li.appendChild(del);
+        ul.appendChild(li);
+      });
+    });
+  }
+
+  function uploadDoc(type) {
+    var r = ddStudent();
+    if (!r) return;
+    var file = ddInputs[type].files && ddInputs[type].files[0];
+    if (!file) { ddError("올릴 파일을 먼저 선택해 주세요. ('파일 선택' 버튼을 누르세요)"); return; }
+    if (file.size > MAX_UPLOAD) { ddError("파일이 너무 커요 (" + fmtSize(file.size) + "). 8MB 이하로 줄여서 올려 주세요. 사진은 화질을 낮추거나 PDF로 저장하면 줄어요."); return; }
+    var btn = ddButtons[type];
+    btn.disabled = true;
+    btn.textContent = "올리는 중…";
+    ddMsg.hidden = true;
+    var reader = new FileReader();
+    reader.onerror = function () { btn.disabled = false; btn.textContent = "업로드"; ddError("파일을 읽지 못했어요. 다시 선택해 주세요."); };
+    reader.onload = function () {
+      var base64 = String(reader.result).split(",")[1] || "";
+      callApi("uploadDocument", { studentId: r.id, type: type, fileName: file.name, mimeType: file.type, base64: base64 })
+        .then(function (rows) {
+          btn.disabled = false;
+          btn.textContent = "업로드";
+          ddInputs[type].value = "";
+          rosterAllRows = rows;
+          setStatus("서류 업로드됨 · " + nowLabel());
+          applyRosterView();
+          renderDocDialog();
+        })
+        .catch(function (err) { btn.disabled = false; btn.textContent = "업로드"; ddError(err); });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  Object.keys(ddButtons).forEach(function (type) {
+    ddButtons[type].addEventListener("click", function () { uploadDoc(type); });
+  });
+  document.getElementById("ddClose").addEventListener("click", function () { docDialog.close(); });
+
+  // 빈 양식 인쇄 (이름·날짜·금액을 손으로 쓰는 양식)
+  var BLANK_STUDENT = { name: "", contact: "", registeredDate: "", endDate: "", totalFee: 0, paidTotal: 0, balance: 0, payments: [] };
+  document.getElementById("blankAppPrint").addEventListener("click", function () { printDocs(BLANK_STUDENT, { application: true }); });
+  document.getElementById("blankCertPrint").addEventListener("click", function () { printDocs(BLANK_STUDENT, { certificate: true }); });
+
   // 수강생 삭제: 회차 평가 기록과 납입 내역까지 함께 지워지므로 한 번 더 확인한다.
   function deleteStudentRow(r) {
     var msg = '"' + r.name + '" 수강생을 삭제할까요?\n\n'
-      + '이 수강생의 회차 평가 기록 ' + (r.sessionCount || 0) + '회, 납입 내역 ' + ((r.payments || []).length) + '건도 모두 함께 삭제되며 되돌릴 수 없어요.';
+      + '이 수강생의 회차 평가 기록 ' + (r.sessionCount || 0) + '회, 납입 내역 ' + ((r.payments || []).length) + '건, 업로드한 서류 ' + ((r.documents || []).length) + '건도 모두 함께 삭제되며 되돌릴 수 없어요.';
     if (!confirm(msg)) return;
     setStatus("삭제 중…");
     callApi("deleteStudent", { studentId: r.id })
@@ -1700,13 +1843,13 @@
 
   // 서버(Apps Script)가 옛날 버전이면 눈에 띄게 알려준다 (그대로 쓰면 납입·삭제·마감일이 저장되지 않는다).
   callApi("getVersion").then(function (v) {
-    if (v !== "payments-v3") showServerWarn();
+    if (v !== "payments-v4") showServerWarn();
   }).catch(function (err) {
     if (err && /알 수 없는 요청/.test(err.message || "")) showServerWarn();
   });
   function showServerWarn() {
     var el = document.getElementById("serverWarn");
-    el.textContent = "⚠ 서버(Apps Script)가 옛날 버전이라 받은 금액·잔금이 저장·표시되지 않아요. Apps Script에 새 Code.js를 붙여넣고 저장한 뒤 '배포 → 배포 관리 → 연필 → 버전: 새 버전 → 배포'를 해 주세요. (새 배포를 만들면 안 돼요)";
+    el.textContent = "⚠ 서버(Apps Script)가 옛날 버전이라 받은 금액·잔금·서류 업로드가 저장되지 않아요. Apps Script에 새 Code.js를 붙여넣고 저장한 뒤 '배포 → 배포 관리 → 연필 → 버전: 새 버전 → 배포'를 해 주세요. (새 배포를 만들면 안 돼요)";
     el.hidden = false;
   }
 })();
