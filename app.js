@@ -751,6 +751,17 @@
 
   function box(on) { return on ? "[ ✓ ]" : "[&nbsp;&nbsp;&nbsp;]"; }
 
+  // 작성 화면(editable)에서는 빈칸을 직접 입력할 수 있는 칸으로, 일반 출력에서는 그냥 글자로 내보낸다.
+  function fillSpan(E, text, ph) {
+    return E ? '<span class="fill" contenteditable="true" data-ph="' + escHtml(ph) + '">' + escHtml(text || "") + '</span>' : escHtml(text || "");
+  }
+  function dateFill(E, ymd, ph) {
+    return E ? fillSpan(true, ymd ? dateKor(ymd) : "", ph) : escHtml(dateKor(ymd));
+  }
+  function chkBox(E, on) {
+    return E ? '<span class="chk" data-on="' + (on ? 1 : 0) + '">' + box(on) + '</span>' : box(on);
+  }
+
   function usedMethods(s) {
     var o = {};
     (s.payments || []).forEach(function (p) { if (p.method) o[p.method] = true; });
@@ -772,6 +783,7 @@
 
   // ① 실내운전교습 등록 신청서
   function buildApplicationHtml(s) {
+    var E = !!s.editable;
     var used = usedMethods(s);
     var fee = feeOf(s);
     return ''
@@ -779,11 +791,11 @@
       + '<h1>실내운전교습 등록 신청서</h1>'
       + '<h2>[교습생 정보]</h2>'
       + '<div class="info-grid">'
-      + '<p>성 명: ' + escHtml(s.name) + '</p>'
-      + '<p>연락처: ' + escHtml(s.contact) + '</p>'
-      + '<p>생년월일: </p>'
-      + '<p>등록일자: ' + escHtml(dateKor(s.registeredDate)) + '</p>'
-      + '<p class="span2">교습 만료일: ' + escHtml(dateKor(s.endDate || endDateOf(s.registeredDate))) + ' (등록일로부터 2개월)</p>'
+      + '<p>성 명: ' + fillSpan(E, s.name, '이름') + '</p>'
+      + '<p>연락처: ' + fillSpan(E, s.contact, '010-0000-0000') + '</p>'
+      + '<p>생년월일: ' + fillSpan(E, '', '0000-00-00') + '</p>'
+      + '<p>등록일자: ' + dateFill(E, s.registeredDate, '0000년 0월 0일') + '</p>'
+      + '<p class="span2">교습 만료일: ' + dateFill(E, s.endDate || endDateOf(s.registeredDate), '0000년 0월 0일') + ' (등록일로부터 2개월)</p>'
       + '</div>'
       + '<h2>[수강 약관]</h2>'
       + '<div class="terms-cols">'
@@ -806,18 +818,18 @@
       + '</div>'
       + '<div class="keep">'
       + '<h2>[중요 약관 필수 동의]</h2>'
-      + '<p>1.[&nbsp;&nbsp;&nbsp;] 동의함 — (이용 조건 및 미취득 귀책 동의) 영업일 기준 1일 최대 2시간 이용 규칙을 숙지하였으며, 2개월 내 면허 미취득 시 수강생 귀책사유임에 동의합니다.</p>'
-      + '<p>2.[&nbsp;&nbsp;&nbsp;] 동의함 — (무상 서비스 동의) 실차 연습은 교습비와 무관한 순수 무상 선택 서비스임을 확인하고 동의합니다.</p>'
-      + '<p>3.[&nbsp;&nbsp;&nbsp;] 동의함 — (안전 및 퇴정 수칙 동의) 음주·실내 흡연 금지 및 소란 행위 시 등록 취소(환불 불가) 규정에 동의합니다.</p>'
+      + '<p>1.' + chkBox(E, false) + ' 동의함 — (이용 조건 및 미취득 귀책 동의) 영업일 기준 1일 최대 2시간 이용 규칙을 숙지하였으며, 2개월 내 면허 미취득 시 수강생 귀책사유임에 동의합니다.</p>'
+      + '<p>2.' + chkBox(E, false) + ' 동의함 — (무상 서비스 동의) 실차 연습은 교습비와 무관한 순수 무상 선택 서비스임을 확인하고 동의합니다.</p>'
+      + '<p>3.' + chkBox(E, false) + ' 동의함 — (안전 및 퇴정 수칙 동의) 음주·실내 흡연 금지 및 소란 행위 시 등록 취소(환불 불가) 규정에 동의합니다.</p>'
       + '</div>'
       + '<div class="keep">'
       + '<h2>[결제 및 영수 확인]</h2>'
-      + '<p>총 교습비: ' + (fee ? '<b>' + escHtml(Number(fee).toLocaleString("ko-KR")) + '</b>' : '___________________') + ' 원</p>'
-      + '<p>결제 수단: ' + box(used["카드"]) + ' 카드 &nbsp;/&nbsp; ' + box(used["계좌이체"]) + ' 계좌이체 &nbsp;/&nbsp; ' + box(used["현금"]) + ' 현금 &nbsp;/&nbsp; ' + box(false) + ' 기타 (&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;)</p>'
+      + '<p>총 교습비: ' + (E ? fillSpan(true, '', '0,000,000') : (fee ? '<b>' + escHtml(Number(fee).toLocaleString("ko-KR")) + '</b>' : '___________________')) + ' 원</p>'
+      + '<p>결제 수단: ' + chkBox(E, used["카드"]) + ' 카드 &nbsp;/&nbsp; ' + chkBox(E, used["계좌이체"]) + ' 계좌이체 &nbsp;/&nbsp; ' + chkBox(E, used["현금"]) + ' 현금 &nbsp;/&nbsp; ' + chkBox(E, false) + ' 기타 (' + (E ? fillSpan(true, '', '직접 입력') : '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;') + ')</p>'
       + installmentLineHtml(s)
       + '<p class="gap">위 교습비를 정식 영수하였으며, 본인은 위 수강 약관을 충분히 숙지하고 동의하여 실내운전교습 등록을 신청합니다.</p>'
-      + '<p class="center gap">' + escHtml(dateKor(s.registeredDate)) + '</p>'
-      + '<p class="gap">신청인(수강생): ' + escHtml(s.name) + ' ___________________ (인/서명)</p>'
+      + '<p class="center gap">' + dateFill(E, s.registeredDate, '0000년 0월 0일') + '</p>'
+      + '<p class="gap">신청인(수강생): ' + fillSpan(E, s.name, '이름') + ' ___________________ (인/서명)</p>'
       + '<p>교습소명: 차샘 운전교실</p>'
       + '<p>대표자: 이석재 (인/서명)</p>'
       + '</div>'
@@ -826,17 +838,21 @@
 
   // ② 실내 운전 수강 확인서
   function buildCertificateHtml(s) {
-    var period = dateKor(s.registeredDate) + "~" + dateKor(s.endDate || endDateOf(s.registeredDate));
+    var E = !!s.editable;
+    var endYmd = s.endDate || endDateOf(s.registeredDate);
+    var period = E
+      ? fillSpan(true, s.registeredDate ? dateKor(s.registeredDate) : '', '시작일') + ' ~ ' + fillSpan(true, endYmd ? dateKor(endYmd) : '', '종료일')
+      : escHtml(dateKor(s.registeredDate) + "~" + dateKor(endYmd));
     return ''
       + '<div class="form-page cert-form">'
       + '<h1>실내 운전 수강 확인서</h1>'
-      + '<table class="cert-table cert-top"><tr><th>수강생 성함</th><td>' + escHtml(s.name) + '</td><th>수강생 연락처</th><td>' + escHtml(s.contact) + '</td></tr></table>'
+      + '<table class="cert-table cert-top"><tr><th>수강생 성함</th><td>' + fillSpan(E, s.name, '이름') + '</td><th>수강생 연락처</th><td>' + fillSpan(E, s.contact, '010-0000-0000') + '</td></tr></table>'
       + '<table class="cert-table cert-main">'
       + '<tr><th>발급처</th><td><b><u>차샘 운전교실</u></b></td></tr>'
       + '<tr><th>과정명</th><td>운전면허 취득</td></tr>'
       + '<tr><th>수업내용</th><td>실내 시뮬레이션 연습</td></tr>'
-      + '<tr><th>수강기간</th><td>' + escHtml(period) + '</td></tr>'
-      + '<tr><th>교육비 결제금액</th><td>' + (feeOf(s) ? escHtml(Number(feeOf(s)).toLocaleString("ko-KR")) : '') + ' 원'
+      + '<tr><th>수강기간</th><td>' + period + '</td></tr>'
+      + '<tr><th>교육비 결제금액</th><td>' + (E ? fillSpan(true, '', '0,000,000') : (feeOf(s) ? escHtml(Number(feeOf(s)).toLocaleString("ko-KR")) : '')) + ' 원'
       + (s.balance > 0 ? '<br><small>(납입 ' + escHtml(Number(s.paidTotal).toLocaleString("ko-KR")) + '원 · 잔금 ' + escHtml(Number(s.balance).toLocaleString("ko-KR")) + '원)</small>' : '')
       + '</td></tr>'
       + '</table>'
@@ -850,7 +866,7 @@
       + '<p>1.[음주·흡연 금지] 음주 후 연습은 금지되며 위반 시 즉시 중단됩니다. 음주 연습 재발 및 실내 흡연 수칙 위반 시 즉시 등록 취소(퇴정) 조치되며 환불되지 않습니다.</p>'
       + '<p>2.[면학 분위기 조성] 교습소 내 타인과의 다툼, 시비, 소란 행위 시 강제 퇴장 조치될 수 있습니다.</p>'
       + '</div>'
-      + '<p class="cert-date">' + escHtml(dateKor(s.registeredDate)) + '</p>'
+      + '<p class="cert-date">' + dateFill(E, s.registeredDate, '0000년 0월 0일') + '</p>'
       + '<p class="cert-sign">대표: 이 석 재 <img src="' + SIGN_IMG + '" alt=""></p>'
       + '</div>';
   }
@@ -1032,6 +1048,69 @@
   var BLANK_STUDENT = { name: "", contact: "", registeredDate: "", endDate: "", totalFee: 0, paidTotal: 0, balance: 0, payments: [] };
   document.getElementById("blankAppPrint").addEventListener("click", function () { printDocs(BLANK_STUDENT, { application: true }); });
   document.getElementById("blankCertPrint").addEventListener("click", function () { printDocs(BLANK_STUDENT, { certificate: true }); });
+
+  /* ---------------------------------------------------------------- */
+  /* 양식 작성 화면: PC에서 빈칸에 직접 입력하고 인쇄                          */
+  /* ---------------------------------------------------------------- */
+
+  var fdDialog = document.getElementById("fillDialog");
+  var fdTitle = document.getElementById("fdTitle");
+  var fdFrame = document.getElementById("fdFrame");
+
+  // 인쇄용 양식 스타일(@media print 안의 규칙)을 그대로 꺼내서 작성 화면에도 쓴다.
+  function printCssText() {
+    var css = "";
+    Array.prototype.forEach.call(document.styleSheets, function (sheet) {
+      var rules;
+      try { rules = sheet.cssRules; } catch (e) { return; }
+      Array.prototype.forEach.call(rules, function (rule) {
+        if (rule.type === 4 && /print/.test(rule.media.mediaText)) {
+          Array.prototype.forEach.call(rule.cssRules, function (r) { css += r.cssText + "\n"; });
+        }
+      });
+    });
+    return css;
+  }
+
+  var FILL_SCREEN_CSS =
+    "@media screen{" +
+    "html,body{margin:0;background:#e9edf3 !important;}" +
+    ".print-area{width:178mm;margin:8mm auto;padding:14mm 16mm;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.18);display:block;}" +
+    ".fill{display:inline-block;min-width:26mm;padding:0 3px;border-bottom:1.5px solid #2a7de1;background:#eaf3ff;outline:none;cursor:text;}" +
+    ".fill:empty:before{content:attr(data-ph);color:#8aa1bd;}" +
+    ".fill:focus{background:#d6e8ff;}" +
+    ".chk{cursor:pointer;color:#2a7de1;font-weight:700;}" +
+    "}" +
+    "@media print{.fill{display:inline-block;min-width:26mm;border-bottom:1px solid #000;}.fill:empty:before{content:'';}}";
+
+  // 작성 화면 안에서 쓰는 작은 스크립트: 체크칸 누르면 ✓ 토글, 줄바꿈 막기, 붙여넣기는 글자만
+  var FILL_FRAME_JS =
+    "document.addEventListener('click',function(e){var c=e.target.closest('.chk');if(!c)return;" +
+    "var on=c.getAttribute('data-on')==='1';c.setAttribute('data-on',on?'0':'1');" +
+    "c.innerHTML=on?'[\\u00a0\\u00a0\\u00a0]':'[ \\u2713 ]';});" +
+    "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.closest('.fill'))e.preventDefault();});" +
+    "document.addEventListener('paste',function(e){if(!e.target.closest('.fill'))return;e.preventDefault();" +
+    "var t=(e.clipboardData||window.clipboardData).getData('text').replace(/[\\r\\n]+/g,' ');document.execCommand('insertText',false,t);});";
+
+  function openFillDialog(kind) {
+    var today = todayStr();
+    var s = { name: "", contact: "", registeredDate: today, endDate: endDateOf(today), totalFee: 0, paidTotal: 0, balance: 0, payments: [], editable: true };
+    var body = kind === "application" ? buildApplicationHtml(s) : buildCertificateHtml(s);
+    fdTitle.textContent = (kind === "application" ? "등록 신청서" : "수강 확인서") + " 작성";
+    fdFrame.srcdoc = '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>' + fdTitle.textContent + '</title><style>'
+      + printCssText() + FILL_SCREEN_CSS
+      + '</style></head><body><div class="print-area">' + body + '</div><script>' + FILL_FRAME_JS + '<' + '/script></body></html>';
+    if (fdDialog.showModal) fdDialog.showModal(); else fdDialog.setAttribute("open", "");
+  }
+
+  document.getElementById("fillAppOpen").addEventListener("click", function () { openFillDialog("application"); });
+  document.getElementById("fillCertOpen").addEventListener("click", function () { openFillDialog("certificate"); });
+  document.getElementById("fdClose").addEventListener("click", function () { fdDialog.close(); });
+  // 이 작성 화면(액자) 안의 양식만 인쇄된다. 인쇄창에서 'PDF로 저장'을 고르면 PDF 파일로도 저장할 수 있다.
+  document.getElementById("fdPrint").addEventListener("click", function () {
+    try { fdFrame.contentWindow.focus(); fdFrame.contentWindow.print(); } catch (e) { alert("인쇄를 시작하지 못했어요: " + e.message); }
+  });
+
 
   // 수강생 삭제: 회차 평가 기록과 납입 내역까지 함께 지워지므로 한 번 더 확인한다.
   function deleteStudentRow(r) {

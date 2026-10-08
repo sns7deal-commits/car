@@ -46,15 +46,18 @@
     <section id="tabRoster" class="tab-panel">
       <div class="panel-card">
         <div class="blank-forms">
-          <span class="blank-title">빈 양식</span>
-          <span class="blank-item">
-            <button type="button" id="blankAppPrint">등록 신청서 인쇄</button>
+          <div class="blank-row">
+            <b class="blank-name">등록 신청서</b>
+            <button type="button" id="fillAppOpen" class="blank-primary">PC에서 작성·인쇄</button>
+            <button type="button" id="blankAppPrint">빈 양식 인쇄</button>
             <a class="blank-dl" href="blank_application.pdf" download="실내운전교습_등록신청서_빈양식.pdf">PDF 받기</a>
-          </span>
-          <span class="blank-item">
-            <button type="button" id="blankCertPrint">수강 확인서 인쇄</button>
+          </div>
+          <div class="blank-row">
+            <b class="blank-name">수강 확인서</b>
+            <button type="button" id="fillCertOpen" class="blank-primary">PC에서 작성·인쇄</button>
+            <button type="button" id="blankCertPrint">빈 양식 인쇄</button>
             <a class="blank-dl" href="blank_certificate.pdf" download="실내운전_수강확인서_빈양식.pdf">PDF 받기</a>
-          </span>
+          </div>
         </div>
 
         <div class="add-student">
@@ -305,6 +308,19 @@
         <button type="button" id="pdUnpaid" class="pd-ghost" hidden>완불 취소</button>
       </div>
     </div>
+  </dialog>
+
+  <!-- 양식 작성 화면: 빈칸에 직접 입력한 뒤 인쇄 -->
+  <dialog id="fillDialog" class="fill-dialog">
+    <div class="fd-head">
+      <b id="fdTitle">양식 작성</b>
+      <span class="fd-actions">
+        <button type="button" id="fdPrint">인쇄</button>
+        <button type="button" id="fdClose">닫기</button>
+      </span>
+    </div>
+    <p class="fd-help">파란 칸을 눌러 직접 입력하세요. [ &nbsp; ] 체크 칸은 눌러서 ✓ 표시를 켜고 끌 수 있어요. 인쇄창에서 'PDF로 저장'을 고르면 파일로도 저장돼요.</p>
+    <iframe id="fdFrame" title="양식 작성"></iframe>
   </dialog>
 
   <!-- 서류 업로드 (등록 신청서 / 수강 확인서 파일을 PC에서 올려 수강생별로 보관) -->
