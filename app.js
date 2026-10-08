@@ -1050,12 +1050,8 @@
   document.getElementById("blankCertPrint").addEventListener("click", function () { printDocs(BLANK_STUDENT, { certificate: true }); });
 
   /* ---------------------------------------------------------------- */
-  /* 양식 작성 화면: PC에서 빈칸에 직접 입력하고 인쇄                          */
+  /* 양식 작성 화면: PC에서 빈칸에 직접 입력하고 인쇄 (새 탭으로 연다)             */
   /* ---------------------------------------------------------------- */
-
-  var fdDialog = document.getElementById("fillDialog");
-  var fdTitle = document.getElementById("fdTitle");
-  var fdFrame = document.getElementById("fdFrame");
 
   // 인쇄용 양식 스타일(@media print 안의 규칙)을 그대로 꺼내서 작성 화면에도 쓴다.
   function printCssText() {
@@ -1075,42 +1071,56 @@
   var FILL_SCREEN_CSS =
     "@media screen{" +
     "html,body{margin:0;background:#e9edf3 !important;}" +
+    ".fw-bar{position:sticky;top:0;z-index:10;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:10px 16px;background:#1f2937;color:#fff;font-family:'Malgun Gothic','Noto Sans KR',sans-serif;font-size:14px;}" +
+    ".fw-bar b{font-size:16px;}" +
+    ".fw-bar .fw-help{flex:1 1 260px;font-size:12.5px;color:#cbd5e1;line-height:1.5;}" +
+    ".fw-bar button{font:inherit;font-weight:800;padding:8px 22px;border-radius:9px;border:0;background:#2a7de1;color:#fff;cursor:pointer;}" +
     ".print-area{width:178mm;margin:8mm auto;padding:14mm 16mm;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.18);display:block;}" +
     ".fill{display:inline-block;min-width:26mm;padding:0 3px;border-bottom:1.5px solid #2a7de1;background:#eaf3ff;outline:none;cursor:text;}" +
     ".fill:empty:before{content:attr(data-ph);color:#8aa1bd;}" +
     ".fill:focus{background:#d6e8ff;}" +
     ".chk{cursor:pointer;color:#2a7de1;font-weight:700;}" +
     "}" +
-    "@media print{.fill{display:inline-block;min-width:26mm;border-bottom:1px solid #000;}.fill:empty:before{content:'';}}";
+    "@media print{.fw-bar{display:none !important;}.fill{display:inline-block;min-width:26mm;border-bottom:1px solid #000;}.fill:empty:before{content:'';}}";
 
-  // 작성 화면 안에서 쓰는 작은 스크립트: 체크칸 누르면 ✓ 토글, 줄바꿈 막기, 붙여넣기는 글자만
+  // 작성 화면 안에서 쓰는 작은 스크립트: 체크칸 누르면 ✓ 토글, 줄바꿈 막기, 붙여넣기는 글자만, 인쇄 단추
   var FILL_FRAME_JS =
     "document.addEventListener('click',function(e){var c=e.target.closest('.chk');if(!c)return;" +
     "var on=c.getAttribute('data-on')==='1';c.setAttribute('data-on',on?'0':'1');" +
     "c.innerHTML=on?'[\\u00a0\\u00a0\\u00a0]':'[ \\u2713 ]';});" +
     "document.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.closest('.fill'))e.preventDefault();});" +
     "document.addEventListener('paste',function(e){if(!e.target.closest('.fill'))return;e.preventDefault();" +
-    "var t=(e.clipboardData||window.clipboardData).getData('text').replace(/[\\r\\n]+/g,' ');document.execCommand('insertText',false,t);});";
+    "var t=(e.clipboardData||window.clipboardData).getData('text').replace(/[\\r\\n]+/g,' ');document.execCommand('insertText',false,t);});" +
+    "document.getElementById('fwPrint').addEventListener('click',function(){window.print();});";
 
   function openFillDialog(kind) {
-    var today = todayStr();
-    var s = { name: "", contact: "", registeredDate: today, endDate: endDateOf(today), totalFee: 0, paidTotal: 0, balance: 0, payments: [], editable: true };
-    var body = kind === "application" ? buildApplicationHtml(s) : buildCertificateHtml(s);
-    fdTitle.textContent = (kind === "application" ? "등록 신청서" : "수강 확인서") + " 작성";
-    fdFrame.srcdoc = '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>' + fdTitle.textContent + '</title><style>'
-      + printCssText() + FILL_SCREEN_CSS
-      + '</style></head><body><div class="print-area">' + body + '</div><script>' + FILL_FRAME_JS + '<' + '/script></body></html>';
-    if (fdDialog.showModal) fdDialog.showModal(); else fdDialog.setAttribute("open", "");
+    try {
+      var css = printCssText();
+      if (!css) throw new Error("양식 스타일(style.css)을 찾지 못했어요. style.css를 다시 올리고 Ctrl+F5를 눌러 주세요.");
+      var today = todayStr();
+      var s = { name: "", contact: "", registeredDate: today, endDate: endDateOf(today), totalFee: 0, paidTotal: 0, balance: 0, payments: [], editable: true };
+      var body = kind === "application" ? buildApplicationHtml(s) : buildCertificateHtml(s);
+      var title = (kind === "application" ? "등록 신청서" : "수강 확인서") + " 작성";
+      var doc = '<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>' + title + '</title><style>'
+        + css + FILL_SCREEN_CSS
+        + '</style></head><body>'
+        + '<div class="fw-bar"><b>' + title + '</b>'
+        + '<span class="fw-help">파란 칸을 눌러 직접 입력하세요. [ &nbsp; ] 체크 칸은 눌러서 ✓ 를 켜고 끌 수 있어요. 인쇄창에서 &#39;PDF로 저장&#39;을 고르면 파일로도 저장돼요.</span>'
+        + '<button type="button" id="fwPrint">인쇄</button></div>'
+        + '<div class="print-area">' + body + '</div><script>' + FILL_FRAME_JS + '<' + '/script></body></html>';
+      var url = URL.createObjectURL(new Blob([doc], { type: "text/html;charset=utf-8" }));
+      var w = window.open(url, "_blank");
+      if (!w) alert("새 창이 차단됐어요.\n\n주소창 오른쪽의 '팝업 차단됨' 아이콘을 눌러 '항상 허용'으로 바꾼 뒤 다시 눌러 주세요.");
+    } catch (e) {
+      console.error(e);
+      alert("양식을 열지 못했어요.\n\n" + (e && e.message ? e.message : e));
+    }
   }
 
-  document.getElementById("fillAppOpen").addEventListener("click", function () { openFillDialog("application"); });
-  document.getElementById("fillCertOpen").addEventListener("click", function () { openFillDialog("certificate"); });
-  document.getElementById("fdClose").addEventListener("click", function () { fdDialog.close(); });
-  // 이 작성 화면(액자) 안의 양식만 인쇄된다. 인쇄창에서 'PDF로 저장'을 고르면 PDF 파일로도 저장할 수 있다.
-  document.getElementById("fdPrint").addEventListener("click", function () {
-    try { fdFrame.contentWindow.focus(); fdFrame.contentWindow.print(); } catch (e) { alert("인쇄를 시작하지 못했어요: " + e.message); }
-  });
-
+  var fillAppBtn = document.getElementById("fillAppOpen");
+  var fillCertBtn = document.getElementById("fillCertOpen");
+  if (fillAppBtn) fillAppBtn.addEventListener("click", function () { openFillDialog("application"); });
+  if (fillCertBtn) fillCertBtn.addEventListener("click", function () { openFillDialog("certificate"); });
 
   // 수강생 삭제: 회차 평가 기록과 납입 내역까지 함께 지워지므로 한 번 더 확인한다.
   function deleteStudentRow(r) {
