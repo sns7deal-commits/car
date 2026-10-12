@@ -325,7 +325,9 @@
       delBtn.type = "button";
       delBtn.className = "roster-link roster-del";
       delBtn.textContent = "삭제";
-      delBtn.addEventListener("click", function () { deleteStudentRow(r); });
+      armDelete(delBtn, "삭제", function () {
+        setStatus('"' + r.name + '" 삭제: 회차 평가 ' + (r.sessionCount || 0) + '회, 납입 ' + ((r.payments || []).length) + '건, 서류 ' + ((r.documents || []).length) + '건도 함께 지워져요. 4초 안에 \'정말 삭제?\'를 한 번 더 누르세요.');
+      }, function (done) { deleteStudentRow(r, done); });
       tdLink.appendChild(delBtn);
       tr.appendChild(tdLink);
 
@@ -632,8 +634,11 @@
       del.type = "button";
       del.className = "pd-del";
       del.textContent = "삭제";
-      del.addEventListener("click", function () {
-        if (!confirm(shortDate(p.date) + " " + formatWon(p.amount) + " 납입 내역을 삭제할까요?")) return;
+      armDelete(del, "삭제", function () {
+        pdMsg.textContent = shortDate(p.date) + " " + formatWon(p.amount) + " 납입 내역을 지우려면 '정말 삭제?'를 한 번 더 누르세요.";
+        pdMsg.hidden = false;
+      }, function (done) {
+        pdMsg.hidden = true;
         callApi("deletePayment", { paymentId: p.id })
           .then(function (rows) {
             rosterAllRows = rows;
@@ -641,7 +646,7 @@
             applyRosterView();
             renderPayDialog();
           })
-          .catch(pdError);
+          .catch(function (err) { done(); pdError(err); });
       });
       tdDel.appendChild(del);
       tr.appendChild(tdDel);
@@ -992,17 +997,19 @@
         del.type = "button";
         del.className = "pd-del";
         del.textContent = "삭제";
-        del.addEventListener("click", function () {
-          if (!confirm('"' + d.name + '" 파일을 삭제할까요? 드라이브 휴지통으로 이동해요.')) return;
+        armDelete(del, "삭제", function () {
+          ddMsg.textContent = '"' + d.name + '" 파일을 지우려면 \'정말 삭제?\'를 한 번 더 누르세요. (드라이브 휴지통으로 이동해요)';
+          ddMsg.hidden = false;
+        }, function (done) {
+          ddMsg.hidden = true;
           callApi("deleteDocument", { docId: d.id })
             .then(function (rows) {
               rosterAllRows = rows;
-              ddMsg.hidden = true;
               setStatus("삭제됨 · " + nowLabel());
               applyRosterView();
               renderDocDialog();
             })
-            .catch(ddError);
+            .catch(function (err) { done(); ddError(err); });
         });
         li.appendChild(del);
         ul.appendChild(li);
@@ -1076,6 +1083,7 @@
     ".fw-bar .fw-help{flex:1 1 260px;font-size:12.5px;color:#cbd5e1;line-height:1.5;}" +
     ".fw-bar button{font:inherit;font-weight:800;padding:8px 22px;border-radius:9px;border:0;background:#2a7de1;color:#fff;cursor:pointer;}" +
     ".print-area{width:178mm;margin:8mm auto;padding:14mm 16mm;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.18);display:block;}" +
+    ".form-page{padding:0 !important;height:auto !important;}" +
     ".fill{display:inline-block;min-width:26mm;padding:0 3px;border-bottom:1.5px solid #2a7de1;background:#eaf3ff;outline:none;cursor:text;}" +
     ".fill:empty:before{content:attr(data-ph);color:#8aa1bd;}" +
     ".fill:focus{background:#d6e8ff;}" +
@@ -1122,11 +1130,34 @@
   if (fillAppBtn) fillAppBtn.addEventListener("click", function () { openFillDialog("application"); });
   if (fillCertBtn) fillCertBtn.addEventListener("click", function () { openFillDialog("certificate"); });
 
-  // 수강생 삭제: 회차 평가 기록과 납입 내역까지 함께 지워지므로 한 번 더 확인한다.
-  function deleteStudentRow(r) {
-    var msg = '"' + r.name + '" 수강생을 삭제할까요?\n\n'
-      + '이 수강생의 회차 평가 기록 ' + (r.sessionCount || 0) + '회, 납입 내역 ' + ((r.payments || []).length) + '건, 업로드한 서류 ' + ((r.documents || []).length) + '건도 모두 함께 삭제되며 되돌릴 수 없어요.';
-    if (!confirm(msg)) return;
+  // 브라우저 확인창(confirm)은 한 번 "이 페이지에서 다시 표시하지 않음"을 체크하면 이후 삭제가 아무 반응 없이 막힌다.
+  // 그래서 삭제 버튼을 한 번 누르면 "정말 삭제?"로 바뀌고, 4초 안에 한 번 더 누르면 삭제하는 방식을 쓴다.
+  function armDelete(btn, idleLabel, onArm, run) {
+    var armed = false, timer = null;
+    function reset() {
+      armed = false;
+      btn.disabled = false;
+      btn.textContent = idleLabel;
+      btn.classList.remove("is-armed");
+    }
+    btn.addEventListener("click", function () {
+      if (!armed) {
+        armed = true;
+        btn.textContent = "정말 삭제?";
+        btn.classList.add("is-armed");
+        if (onArm) onArm();
+        timer = setTimeout(reset, 4000);
+        return;
+      }
+      clearTimeout(timer);
+      btn.disabled = true;
+      btn.textContent = "삭제 중…";
+      run(reset);
+    });
+  }
+
+  // 수강생 삭제: 회차 평가 기록과 납입 내역까지 함께 지워진다 (되돌릴 수 없음).
+  function deleteStudentRow(r, done) {
     setStatus("삭제 중…");
     callApi("deleteStudent", { studentId: r.id })
       .then(function (rows) {
@@ -1136,7 +1167,7 @@
         applyRosterView();
         refreshStudentSelect();
       })
-      .catch(onError);
+      .catch(function (err) { if (done) done(); onError(err); });
   }
 
   function makeEditableCell(studentId, field, value, type, placeholder, isMemo) {

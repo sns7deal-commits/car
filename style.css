@@ -890,11 +890,13 @@
   /* ---- 인쇄용 서류 (등록 신청서 / 수강 확인서) ---- */
   .print-area{ display:none; }
   @media print{
-    @page{ size:A4; margin:14mm 16mm; }
-    html, body{ background:#fff !important; }
+    /* 쪽 여백을 0으로 두면 브라우저가 날짜·제목·주소(머리글/바닥글)를 찍을 자리가 없어서 인쇄에 나오지 않는다.
+       대신 원래 여백(위아래 14mm, 좌우 16mm)은 양식 안쪽 여백(padding)으로 준다. */
+    @page{ size:A4; margin:0; }
+    html, body{ background:#fff !important; margin:0 !important; padding:0 !important; }
     .wrap{ display:none !important; }
-    .print-area{ display:block; color:#000; font-family:"Malgun Gothic","Noto Sans KR",sans-serif; }
-    .form-page{ page-break-after:always; }
+    .print-area{ display:block; margin:0; padding:0; color:#000; font-family:"Malgun Gothic","Noto Sans KR",sans-serif; }
+    .form-page{ box-sizing:border-box; height:296mm; padding:14mm 16mm; page-break-after:always; break-after:page; }
     .form-page:last-child{ page-break-after:auto; }
     .form-page p{ margin:0; }
     .form-page h1{ text-align:center; color:#000; }
@@ -1103,3 +1105,8 @@
   .fd-actions #fdPrint{ background:var(--accent); border-color:var(--accent); color:#fff; }
   .fd-help{ margin:0 0 8px; font-size:12.5px; color:var(--ink-muted); line-height:1.5; }
   #fdFrame{ flex:1 1 auto; width:100%; min-height:0; border:1px solid var(--line-strong); border-radius:10px; background:#e9edf3; }
+
+
+  /* ---- 두 번 눌러 삭제 ---- */
+  .pd-del.is-armed, .roster-del.is-armed{ background:var(--bad) !important; color:#fff !important; border-color:var(--bad) !important; }
+  .pd-del:disabled, .roster-del:disabled{ opacity:.7; cursor:wait; }
